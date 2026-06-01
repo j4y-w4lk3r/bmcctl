@@ -1,0 +1,21 @@
+# build artifacts
+/bmcctl
+/dist/
+*.test
+*.out
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Go
+/vendor/
+
+# anything resembling secrets
+*.env
+.env*
+secrets.json
+hosts.json
+*.token

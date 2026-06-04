@@ -23,6 +23,38 @@ VM_DISK_SIZE ?= 32G
 VM_MEMORY    ?= 4G
 VM_CPUS      ?= 2
 
+# Pick the right path for OVMF (UEFI firmware) and the right QEMU
+# accelerator. We honor an explicit OVMF_CODE / VM_ACCEL override,
+# otherwise auto-detect:
+#   * macOS (brew qemu): /opt/homebrew/share/qemu/edk2-x86_64-code.fd
+#                        no /dev/kvm, accel=tcg
+#   * Arch Linux:        /usr/share/edk2/x64/OVMF_CODE.4m.fd
+#                        /dev/kvm available, accel=kvm:tcg
+# `kvm:tcg` means "use KVM if /dev/kvm is accessible, fall back to
+# TCG software emulation otherwise" — single canonical value that
+# does the right thing on any host.
+OVMF_CODE ?= $(shell \
+    for c in /usr/share/edk2/x64/OVMF_CODE.4m.fd \
+             /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd \
+             /usr/share/OVMF/OVMF_CODE.fd \
+             /opt/homebrew/share/qemu/edk2-x86_64-code.fd; do \
+       [ -f "$$c" ] && echo "$$c" && break; \
+    done)
+VM_ACCEL  ?= $(shell [ -e /dev/kvm ] && echo "kvm:tcg" || echo "tcg")
+
+# Choose the build backend at runtime:
+#   * Linux + mkarchiso on PATH  ->  build-native.sh (FAST: native CPU,
+#                                    no Docker, no emulation tax)
+#   * everything else            ->  build.sh        (Docker via colima,
+#                                    needed on macOS or any non-Arch
+#                                    Linux host without archiso pkg)
+ISO_BACKEND ?= $(shell \
+    if [ "$$(uname -s)" = "Linux" ] && command -v mkarchiso >/dev/null 2>&1; then \
+       echo "$(ISO_BUILD_DIR)/build-native.sh"; \
+    else \
+       echo "$(ISO_BUILD_DIR)/build.sh"; \
+    fi)
+
 .PHONY: help hosts validate iso publish test test-shell clean clean-test _ovmf-vars
 .DEFAULT_GOAL := help
 
@@ -48,6 +80,9 @@ help:
 	@echo "  VM_DISK_SIZE  (default $(VM_DISK_SIZE))"
 	@echo "  VM_MEMORY     (default $(VM_MEMORY))"
 	@echo "  VM_CPUS       (default $(VM_CPUS))"
+	@echo "  OVMF_CODE     (auto: $(OVMF_CODE))"
+	@echo "  VM_ACCEL      (auto: $(VM_ACCEL))"
+	@echo "  ISO_BACKEND   (auto: $(notdir $(ISO_BACKEND)))"
 
 hosts:
 	@echo "Host configs in $(HOSTS_DIR):"
@@ -57,6 +92,7 @@ validate:
 	@echo "::: shellcheck"
 	@shellcheck \
 	    $(ISO_BUILD_DIR)/build.sh \
+	    $(ISO_BUILD_DIR)/build-native.sh \
 	    $(ISO_BUILD_DIR)/render-config.sh \
 	    $(ISO_BUILD_DIR)/profile/airootfs/root/install.sh \
 	    $(ISO_BUILD_DIR)/profile/profiledef.sh
@@ -69,7 +105,8 @@ iso:
 ifndef HOST
 	$(error HOST is unset. Try:  make iso HOST=nas)
 endif
-	@$(ISO_BUILD_DIR)/build.sh $(HOST)
+	@echo "::: backend: $(notdir $(ISO_BACKEND))"
+	@$(ISO_BACKEND) $(HOST)
 
 publish:
 ifndef HOST
@@ -114,16 +151,21 @@ $(ISO_BUILD_DIR)/test-ovmf-vars-template.fd:
 # this terminal — closest analogue to what SOL on a real BMC looks like.
 #
 # Notes:
-#   * On Apple Silicon, x86_64 emulation is full-software (TCG); the
-#     install will be SLOW (10-30 min vs 2-3 min on a real CPU). That's
-#     fine for a smoke test; pacstrap is the bottleneck either way.
-#   * We always create a FRESH qcow2 disk, never overwrite one in place,
-#     and refuse to attach a real disk. There's no path here that can
-#     touch your Mac's filesystem.
+#   * On a Linux host with /dev/kvm, the VM runs at ~native speed.
+#     Install completes in ~3-5 min.
+#   * On macOS Apple Silicon, x86_64 runs under TCG software
+#     emulation; install completes in 30-60 min. Same code paths
+#     either way.
+#   * We always create a FRESH qcow2 disk, never overwrite one in
+#     place, and refuse to attach a real disk. No code path here
+#     can touch the host's filesystem.
 #   * The disk filename includes HOST so multiple hosts don't collide.
 test: _ovmf-vars
 ifndef HOST
 	$(error HOST is unset. Try:  make test HOST=test)
+endif
+ifeq ($(OVMF_CODE),)
+	$(error OVMF_CODE is empty — no OVMF firmware found. Install edk2-ovmf (Arch) or qemu (brew, ships edk2-x86_64-code.fd))
 endif
 	@latest=$$(ls -t $(OUT_DIR)/bmcctl-installer-$(HOST)-*x86_64.iso 2>/dev/null | head -n1); \
 	 if [[ -z $$latest ]]; then \
@@ -132,20 +174,22 @@ endif
 	 fi; \
 	 disk=$(ISO_BUILD_DIR)/test-disk-$(HOST).qcow2; \
 	 vars=$(ISO_BUILD_DIR)/test-ovmf-vars-$(HOST).fd; \
-	 echo "::: ISO  $$latest"; \
-	 echo "::: disk $$disk ($(VM_DISK_SIZE), fresh)"; \
-	 echo "::: vars $$vars (fresh NVRAM for this run)"; \
+	 echo "::: ISO       $$latest"; \
+	 echo "::: disk      $$disk ($(VM_DISK_SIZE), fresh)"; \
+	 echo "::: vars      $$vars (fresh NVRAM for this run)"; \
+	 echo "::: ovmf      $(OVMF_CODE)"; \
+	 echo "::: accel     $(VM_ACCEL)"; \
 	 rm -f $$disk; \
 	 qemu-img create -f qcow2 $$disk $(VM_DISK_SIZE) >/dev/null; \
 	 cp $(ISO_BUILD_DIR)/test-ovmf-vars-template.fd $$vars; \
-	 echo "::: launching qemu (TCG, x86_64, UEFI). install.sh logs to this serial."; \
+	 echo "::: launching qemu. install.sh logs to this serial."; \
 	 echo "::: Ctrl-A then x to quit qemu. Or close the terminal."; \
 	 echo; \
 	 qemu-system-x86_64 \
 	   -name "bmcctl-installer-$(HOST)" \
-	   -machine q35 -accel tcg \
+	   -machine q35 -accel $(VM_ACCEL) \
 	   -cpu max -smp $(VM_CPUS) -m $(VM_MEMORY) \
-	   -drive if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd \
+	   -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 	   -drive if=pflash,format=raw,file=$$vars \
 	   -drive file=$$disk,format=qcow2,if=virtio \
 	   -drive file=$$latest,media=cdrom,if=none,id=cd0,readonly=on \
@@ -162,6 +206,9 @@ test-shell: _ovmf-vars
 ifndef HOST
 	$(error HOST is unset. Try:  make test-shell HOST=test)
 endif
+ifeq ($(OVMF_CODE),)
+	$(error OVMF_CODE is empty — no OVMF firmware found.)
+endif
 	@latest=$$(ls -t $(OUT_DIR)/bmcctl-installer-$(HOST)-*x86_64.iso 2>/dev/null | head -n1); \
 	 if [[ -z $$latest ]]; then \
 	    echo "no ISO for $(HOST) in $(OUT_DIR) — run \`make iso HOST=$(HOST)\` first" >&2; \
@@ -174,9 +221,9 @@ endif
 	 cp $(ISO_BUILD_DIR)/test-ovmf-vars-template.fd $$vars; \
 	 qemu-system-x86_64 \
 	   -name "bmcctl-installer-$(HOST)" \
-	   -machine q35 -accel tcg \
+	   -machine q35 -accel $(VM_ACCEL) \
 	   -cpu max -smp $(VM_CPUS) -m $(VM_MEMORY) \
-	   -drive if=pflash,format=raw,readonly=on,file=/opt/homebrew/share/qemu/edk2-x86_64-code.fd \
+	   -drive if=pflash,format=raw,readonly=on,file=$(OVMF_CODE) \
 	   -drive if=pflash,format=raw,file=$$vars \
 	   -drive file=$$disk,format=qcow2,if=virtio \
 	   -drive file=$$latest,media=cdrom,if=none,id=cd0,readonly=on \

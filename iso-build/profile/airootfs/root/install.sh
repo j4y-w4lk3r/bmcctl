@@ -29,7 +29,14 @@ set -euo pipefail
 
 LOG=/var/log/bmcctl-install.log
 mkdir -p /var/log
-exec > >(tee -a "$LOG") 2>&1
+# /dev/console is the kernel's "all consoles" device; whatever we
+# pass on the kernel cmdline as `console=...` ends up here. With
+# `console=ttyS0,115200 console=tty0` (set by the ISO bootloader
+# config) every write to /dev/console hits both the graphical
+# framebuffer (visible via the BMC's H5Viewer) AND the serial port
+# (visible via SOL), so an operator on either channel sees the
+# install proceed.
+exec > >(tee -a "$LOG" /dev/console) 2>&1
 
 # Trap any uncaught error and drop to a shell instead of just dying
 # silently — easier to debug from SOL than to read journal entries.

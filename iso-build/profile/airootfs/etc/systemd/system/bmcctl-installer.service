@@ -10,12 +10,15 @@ ConditionPathExists=/root/install-config.env
 [Service]
 Type=oneshot
 ExecStart=/root/install.sh
-StandardOutput=tty
-StandardError=tty
-TTYPath=/dev/tty1
-TTYReset=yes
-TTYVHangup=yes
-TTYVTDisallocate=yes
+# journal+console means: write the script's stdout/stderr both to
+# the systemd journal (so `journalctl -fu bmcctl-installer` after the
+# fact shows the full transcript) AND to /dev/console. /dev/console
+# in turn routes to every console= in the kernel cmdline -- with our
+# bootloader patches that's tty0 (BMC H5Viewer / qemu graphical) AND
+# ttyS0 (BMC SOL / qemu -nographic), so an operator on either channel
+# watches the install live.
+StandardOutput=journal+console
+StandardError=journal+console
 # Don't restart on failure; install.sh is idempotent enough that
 # a fresh manual retry from the live env's serial-getty is the
 # right recovery path.

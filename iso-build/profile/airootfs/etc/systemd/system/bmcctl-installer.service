@@ -1,0 +1,27 @@
+[Unit]
+Description=bmcctl unattended Arch installer
+Documentation=https://github.com/j4y-w4lk3r/bmcctl
+After=systemd-networkd-wait-online.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/root/install-config.env
+# We do NOT require the network step to succeed — install.sh has
+# its own 60s wait + curl probe + clearer error message.
+
+[Service]
+Type=oneshot
+ExecStart=/root/install.sh
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+# Don't restart on failure; install.sh is idempotent enough that
+# a fresh manual retry from the live env's serial-getty is the
+# right recovery path.
+Restart=no
+# Long timeout — pacstrap on a slow uplink can take 10+ minutes.
+TimeoutStartSec=3600
+
+[Install]
+WantedBy=multi-user.target

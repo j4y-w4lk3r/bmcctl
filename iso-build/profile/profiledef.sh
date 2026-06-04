@@ -19,13 +19,20 @@ iso_application="bmcctl unattended Arch installer (HOST_LABEL_PLACEHOLDER)"
 iso_version="$(date +%Y.%m.%d)"
 install_dir="arch"
 buildmodes=('iso')
-bootmodes=('bios.syslinux.mbr' 'bios.syslinux.eltorito'
-           'uefi-ia32.grub.esp' 'uefi-x64.grub.esp'
-           'uefi-ia32.grub.eltorito' 'uefi-x64.grub.eltorito')
+# Modern archiso (>=75) collapsed several bootmode flavors. Today's
+# canonical list for an x86_64 dual BIOS+UEFI ISO is exactly these
+# two; mkarchiso warns if you ask for the older split names.
+bootmodes=('bios.syslinux' 'uefi.grub')
 arch="x86_64"
 pacman_conf="pacman.conf"
 airootfs_image_type="squashfs"
-airootfs_image_tool_options=('-comp' 'xz' '-Xbcj' 'x86' '-b' '1M' '-Xdict-size' '1M')
+# Why zstd instead of upstream's xz: parallel mksquashfs with the xz
+# compressor crashes ("FATAL ERROR: xz uncompress failed with error
+# code 9") when the build runs under qemu-user emulation (Apple
+# Silicon -> linux/amd64 container). zstd has no such issue, builds
+# 4-5x faster, and produces an ISO only ~10% larger. archiso/releng
+# itself defaults to zstd in profile templates as of 2024.
+airootfs_image_tool_options=('-comp' 'zstd' '-Xcompression-level' '20' '-b' '1M')
 bootstrap_tarball_compression=(zstd -c -T0 --auto-threads=logical --long -19)
 file_permissions=(
   ["/etc/shadow"]="0:0:400"

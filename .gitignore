@@ -19,3 +19,13 @@
 secrets.json
 hosts.json
 *.token
+
+# iso-build artifacts (large + ephemeral)
+/iso-build/out/
+/iso-build/work-*/
+/iso-build/test-disk-*.qcow2
+/iso-build/test-ovmf-vars-*.fd
+# per-host configs are real config, NOT secrets, so they're tracked
+# in git EXCEPT for ones that obviously shouldn't be (like local
+# scratch tests). example.toml is the canonical reference.
+/iso-build/hosts/test.toml

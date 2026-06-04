@@ -20,9 +20,10 @@
 #
 # Environment overrides:
 #   ISO_BUILDER_IMAGE  Arch container image (default archlinux:latest)
-#   ARCHISO_PKGS       additional packages to install in the builder
-#                      (default: "archiso git")
-#   KEEP_WORKDIR=1     don't delete the work dir after build (debug)
+#   ARCHISO_PKGS       additional packages installed in the builder
+#                      (default: archiso grub git mtools dosfstools)
+#   PLATFORM           docker --platform value
+#                      (default: linux/amd64; needed on Apple Silicon)
 
 set -euo pipefail
 
@@ -47,7 +48,14 @@ mkdir -p "$OUT_DIR" "$WORK_DIR"
 STAGE="$WORK_DIR/profile-overlay"
 rm -rf "$STAGE"
 mkdir -p "$STAGE"
-cp -r "$ISO_BUILD_DIR/profile/." "$STAGE/"
+# `cp -a` preserves symlinks. Critical because macOS BSD `cp -r`
+# DEREFERENCES symlinks (unlike GNU coreutils on Linux), and our
+# overlay deliberately uses a symlink to enable a systemd unit:
+#   profile/airootfs/etc/systemd/system/multi-user.target.wants/bmcctl-installer.service
+#       -> ../bmcctl-installer.service
+# If that gets flattened to a regular file, systemd ignores it and
+# the live ISO sits at a login prompt instead of running install.sh.
+cp -a "$ISO_BUILD_DIR/profile/." "$STAGE/"
 mkdir -p "$STAGE/airootfs/root"
 "$ISO_BUILD_DIR/render-config.sh" "$LABEL" \
     "$STAGE/airootfs/root/install-config.env" \
@@ -61,7 +69,21 @@ rm -f "$STAGE/profiledef.sh.bak"
 
 # 3. Run the build inside Arch.
 IMAGE=${ISO_BUILDER_IMAGE:-archlinux:latest}
-PKGS=${ARCHISO_PKGS:-archiso git}
+# archiso pulls in mkarchiso + the squashfs / iso-creation chain.
+# grub is needed by the uefi.grub bootmode (mkarchiso shells out to
+# grub-install + grub-mkimage). git is here so that, if anything in
+# the profile ever needs to clone a small dotfile repo at build time,
+# we don't have to round-trip an apt install. mtools/dosfstools cover
+# the FAT32 ESP we copy into.
+PKGS=${ARCHISO_PKGS:-archiso grub git mtools dosfstools}
+# We always build an x86_64 ISO. On Apple Silicon hosts the docker
+# daemon defaults to linux/arm64/v8 and `docker pull archlinux:latest`
+# fails because Docker Hub only publishes amd64 for archlinux. Force
+# linux/amd64 so colima emulates via its embedded QEMU — slower the
+# first time (TCG instead of native), but produces a real bootable
+# x86_64 ISO. Override with PLATFORM=linux/amd64 (or =linux/arm64
+# if you have an Arch-on-ARM image and a known archiso aarch64 path).
+PLATFORM=${PLATFORM:-linux/amd64}
 
 if ! docker info >/dev/null 2>&1; then
     echo "build: docker daemon not reachable. If using colima, run:" >&2
@@ -69,39 +91,97 @@ if ! docker info >/dev/null 2>&1; then
     exit 3
 fi
 
+# Persistent pacman package cache. We use a NAMED docker volume
+# (rather than a host bind mount) for the same reason as the chroot:
+# pacman wants normal Linux filesystem semantics. The first build
+# downloads ~600 packages over the network (~10-15 min on amd64
+# emulation); every subsequent build re-uses the cache and finishes
+# in 3-5 min. Volume is preserved across builds; remove it with:
+#   docker volume rm bmcctl-iso-pacman-cache
+PACMAN_CACHE_VOLUME=${PACMAN_CACHE_VOLUME:-bmcctl-iso-pacman-cache}
+docker volume create "$PACMAN_CACHE_VOLUME" >/dev/null
+
 # Bind-mount layout inside the container:
-#   /work     -- per-host work dir (overlay + mkarchiso scratch)
-#   /out      -- ISO output
-# The releng profile is INSIDE the container at
-# /usr/share/archiso/configs/releng — we copy it to /work/profile,
-# then layer our overlay on top.
+#   /overlay  -- our pre-rendered profile overlay (read-only input)
+#   /out      -- ISO output (only the final .iso ever lands here)
+#   /var/cache/pacman/pkg  -- named volume, preserved across builds
+#
+# The mkarchiso work dir lives on the CONTAINER's writable layer at
+# /work, NOT on a host bind mount. Reason: mkarchiso runs pacstrap,
+# which calls flock(2) on /var/lib/pacman/db.lck inside the chroot.
+# colima exposes the macOS host filesystem over a virtio-9p / sshfs
+# style mount that doesn't honor flock the way the chroot pacman
+# expects, so the build fails with "unable to lock database". Keeping
+# the chroot on the container's overlayfs sidesteps the whole class
+# of host-FS semantic mismatches.
 docker run --rm \
+    --platform "$PLATFORM" \
     --privileged \
-    -v "$WORK_DIR:/work" \
+    -v "$STAGE:/overlay:ro" \
     -v "$OUT_DIR:/out" \
+    -v "$PACMAN_CACHE_VOLUME:/var/cache/pacman/pkg" \
     -e LABEL="$LABEL" \
     -e PKGS="$PKGS" \
-    -e KEEP_WORKDIR="${KEEP_WORKDIR:-0}" \
     "$IMAGE" \
     bash -euo pipefail -c '
+        # pacman 7+ sandboxes downloads via seccomp+landlock, which
+        # breaks under qemu-user emulation in a Docker container
+        # (the "error restricting syscalls via seccomp: 22!" failure).
+        # Disabling it for the duration of the build is the standard
+        # workaround: see archlinux/archlinux-docker#225.
+        sed -i "s/^#\?DownloadUser.*/#DownloadUser = alpm/" /etc/pacman.conf
+        echo "DisableSandbox" >> /etc/pacman.conf
+
         # Refresh keyring + install build tooling.
         pacman -Sy --noconfirm archlinux-keyring >/dev/null
         # shellcheck disable=SC2086
         pacman -S --noconfirm --needed $PKGS >/dev/null
 
+        # Container-local work dir (NOT a host bind mount).
+        mkdir -p /work
         cp -r /usr/share/archiso/configs/releng /work/profile-base
-        # Overlay our customizations on top of the upstream profile.
-        cp -r /work/profile-overlay/. /work/profile-base/
+        # Layer our customizations on top of the upstream profile.
+        cp -r /overlay/. /work/profile-base/
 
-        # Append our extra packages without dropping the upstream
-        # ones (the overlay copies our packages.x86_64 verbatim,
-        # so we have to merge here).
+        # Add `console=tty0 console=ttyS0,115200` to the kernel cmdline
+        # in every bootloader config releng ships (syslinux for BIOS,
+        # grub for UEFI). Order matters: the LAST `console=` becomes
+        # /dev/console, so listing ttyS0 LAST means /dev/console
+        # resolves to the serial port. That is what we want for BMC
+        # SOL and `qemu -nographic`, and it also means systemd
+        # `StandardOutput=journal+console` routes service output
+        # over serial. Boot messages still print to BOTH consoles
+        # (the kernel writes printk to every console= listed), so
+        # an admin sitting at the BMC graphical viewer also sees
+        # the boot scroll.
+        # Anchor on `archisobasedir=%INSTALL_DIR%` (unique placeholder).
+        find /work/profile-base/syslinux \
+             /work/profile-base/grub \
+             /work/profile-base/efiboot \
+             -type f \
+             -exec grep -l "archisobasedir=%INSTALL_DIR%" {} + 2>/dev/null \
+        | while read -r f; do
+            sed -i \
+                "s|archisobasedir=%INSTALL_DIR%|console=tty0 console=ttyS0,115200 archisobasedir=%INSTALL_DIR%|g" \
+                "$f"
+            echo "[bmcctl] patched serial console into $f"
+        done
+
+        # Merge our extra packages with the upstream releng list.
+        # We normalize aggressively (strip comments + collapse all
+        # whitespace to one package per line) because the releng
+        # file has aligned columns with trailing whitespace, and a
+        # naive `sort -u` keeps "pkg" and "pkg  " as distinct lines,
+        # which pacman then treats as two separate (and one missing)
+        # targets.
         if [[ -f /usr/share/archiso/configs/releng/packages.x86_64 ]]; then
-            sort -u \
-                /usr/share/archiso/configs/releng/packages.x86_64 \
-                /work/profile-overlay/packages.x86_64 \
-                | grep -v "^#" | grep -v "^$" \
-                > /work/profile-base/packages.x86_64
+            {   cat /usr/share/archiso/configs/releng/packages.x86_64;
+                cat /overlay/packages.x86_64;
+            } | sed -E "s/[[:space:]]*#.*$//" \
+              | tr "[:space:]" "\n" \
+              | grep -v "^$" \
+              | sort -u \
+              > /work/profile-base/packages.x86_64
         fi
 
         mkdir -p /work/mkarchiso
@@ -109,10 +189,6 @@ docker run --rm \
             -w /work/mkarchiso \
             -o /out \
             /work/profile-base
-
-        if [[ ${KEEP_WORKDIR:-0} == 0 ]]; then
-            rm -rf /work/mkarchiso /work/profile-base
-        fi
     '
 
 # 4. Rename the output ISO to include the host label.

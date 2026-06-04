@@ -47,9 +47,9 @@ export default function BmcctlPhase8() {
       </Stack>
 
       <Grid columns={4} gap={12}>
-        <Stat value="9" label="bmcctl commands today" tone="success" />
+        <Stat value="13" label="bmcctl commands shipped" tone="success" />
         <Stat value="48" label="dashboard tiles total" />
-        <Stat value="6" label="planned for v0.2 - v0.4" tone="info" />
+        <Stat value="2" label="planned next (v0.3)" tone="info" />
         <Stat value="33" label="lower-priority extras" tone="warning" />
       </Grid>
 
@@ -227,8 +227,8 @@ curl -k -u admin:PASSWORD https://192.168.1.54/redfish/v1/Systems/Self \\
         { feature: "Power Control - Power Off",       what: "Force-off (yank-the-cord)",             redfish: "POST .../Reset {ForceOff}",                                       cmd: "bmcctl power LABEL off",      status: "done" },
         { feature: "Power Control - ACPI Shutdown",   what: "Polite OS-level shutdown",              redfish: "POST .../Reset {GracefulShutdown}",                               cmd: "bmcctl power LABEL graceful", status: "done" },
         { feature: "Power Control - Power Cycle",     what: "Off then on",                           redfish: "POST .../Reset {PowerCycle}",                                     cmd: "bmcctl power LABEL cycle",    status: "done" },
-        { feature: "Power Control - Hard Reset",      what: "Force-restart, no OS notice",           redfish: "POST .../Reset {ForceRestart}",                                   cmd: "bmcctl power LABEL reset",    status: "planned" },
-        { feature: "Power Control - Boot to BIOS",    what: "Next boot stops in BIOS setup",         redfish: "PATCH /Systems/Self {Boot.Override=BiosSetup}",                    cmd: "bmcctl boot LABEL bios",      status: "planned" },
+        { feature: "Power Control - Hard Reset",      what: "Force-restart, no OS notice",           redfish: "POST .../Reset {ForceRestart}",                                   cmd: "bmcctl power LABEL reset",    status: "done" },
+        { feature: "Power Control - Boot to BIOS",    what: "Next boot stops in BIOS setup",         redfish: "PATCH /Systems/Self {Boot.Override=BiosSetup}",                    cmd: "bmcctl boot LABEL bios",      status: "done" },
         { feature: "Dashboard - PowerState",          what: "On / Off indicator",                    redfish: "GET /Systems/Self {PowerState}",                                  cmd: "bmcctl power LABEL status",   status: "done" },
       ]}/>
 
@@ -246,10 +246,10 @@ curl -k -u admin:PASSWORD https://192.168.1.54/redfish/v1/Systems/Self \\
 
       <H3>OS install path (the install-arch story)</H3>
       <FeatureTable rows={[
-        { feature: "Image Redirection - Remote Images", what: "Mount an ISO via NFS/SMB/HTTPS",      redfish: "POST /Managers/Self/VirtualMedia/CD0/Actions/InsertMedia",        cmd: "bmcctl mount-iso LABEL URL",  status: "planned" },
-        { feature: "Media Redirection - eject",        what: "Unmount the virtual CD",                redfish: "POST /Managers/Self/VirtualMedia/CD0/Actions/EjectMedia",         cmd: "bmcctl eject-iso LABEL",      status: "planned" },
-        { feature: "Power Control - one-shot CD boot", what: "Next boot from virtual CD only",       redfish: "PATCH /Systems/Self {Boot.Override=Once,Target=Cd}",              cmd: "bmcctl boot LABEL cd --once", status: "planned" },
-        { feature: "Cold-start to running OS",         what: "Mount + boot-override + power on",     redfish: "(orchestrates the three above)",                                  cmd: "bmcctl install-arch LABEL --iso URL", status: "planned" },
+        { feature: "Image Redirection - Remote Images", what: "Mount an ISO via NFS/SMB/HTTPS",      redfish: "POST /Managers/Self/VirtualMedia/CD1/Actions/InsertMedia",        cmd: "bmcctl mount-iso LABEL --url URL", status: "done" },
+        { feature: "Media Redirection - eject",        what: "Unmount the virtual CD",                redfish: "POST /Managers/Self/VirtualMedia/CD1/Actions/EjectMedia",         cmd: "bmcctl eject-iso LABEL",      status: "done" },
+        { feature: "Power Control - one-shot CD boot", what: "Next boot from virtual CD only",       redfish: "PATCH /Systems/Self {Boot.Override=Once,Target=Cd}",              cmd: "bmcctl boot LABEL cd",        status: "done" },
+        { feature: "Cold-start to running OS",         what: "Mount + boot-override + power on",     redfish: "(orchestrates the three above)",                                  cmd: "bmcctl install-arch LABEL --iso URL", status: "done" },
       ]}/>
 
       <H3>Maintenance (lower priority, but cheap to add)</H3>
@@ -303,18 +303,18 @@ curl -k -u admin:PASSWORD https://192.168.1.54/redfish/v1/Systems/Self \\
         </Card>
 
         <Card>
-          <CardHeader trailing={<Pill tone="info" size="sm" active>incremental</Pill>}>
+          <CardHeader trailing={<Pill tone="added" size="sm" active>shipped v0.2.0</Pill>}>
             Stream B - Redfish features (value-add)
           </CardHeader>
           <CardBody>
             <Stack gap={8}>
-              <Text tone="secondary">Each step is a self-contained subcommand that you can ship independently. They build toward the cold-start install-arch story.</Text>
+              <Text tone="secondary">Each step is a self-contained subcommand. They build toward the cold-start install-arch story.</Text>
               <Stack gap={6}>
-                <Text><Text weight="semibold">B1.</Text> bmcctl mount-iso / eject-iso (Redfish VirtualMedia.InsertMedia / EjectMedia).</Text>
-                <Text><Text weight="semibold">B2.</Text> bmcctl boot LABEL [pxe|cd|disk|bios] [--once] (PATCH /Systems/Self).</Text>
-                <Text><Text weight="semibold">B3.</Text> bmcctl install-arch LABEL --iso URL (orchestrates B1 + B2 + power on, polls until host comes up).</Text>
-                <Text><Text weight="semibold">B4.</Text> bmcctl firmware (read), bmcctl events (SEL log read), bmcctl net (interface read).</Text>
-                <Text><Text weight="semibold">B5.</Text> All maintenance tiles — backup/restore, BMC reboot, factory-reset.</Text>
+                <Text><Text weight="semibold">B1.</Text> bmcctl mount-iso / eject-iso (Redfish VirtualMedia.InsertMedia / EjectMedia). <Pill tone="added" size="sm">done</Pill></Text>
+                <Text><Text weight="semibold">B2.</Text> bmcctl boot LABEL [pxe|cd|disk|bios|usb|diags] [--continuous] (PATCH /Systems/Self with If-Match ETag). <Pill tone="added" size="sm">done</Pill></Text>
+                <Text><Text weight="semibold">B3.</Text> bmcctl install-arch LABEL --iso URL (orchestrates B1 + B2 + power-cycle, polls PowerState until On). <Pill tone="added" size="sm">done</Pill></Text>
+                <Text><Text weight="semibold">B4.</Text> bmcctl firmware (read), bmcctl events (SEL log read), bmcctl net (interface read). <Pill tone="info" size="sm">v0.3.x</Pill></Text>
+                <Text><Text weight="semibold">B5.</Text> All maintenance tiles — backup/restore, BMC reboot, factory-reset. <Pill tone="neutral" size="sm">on demand</Pill></Text>
               </Stack>
             </Stack>
           </CardBody>
@@ -348,18 +348,21 @@ curl -k -u admin:PASSWORD https://192.168.1.54/redfish/v1/Systems/Self \\
       <Divider />
 
       <Stack gap={6}>
-        <H3>Decision needed</H3>
-        <Text tone="secondary">Pick one, I&apos;ll start in the next message:</Text>
+        <H3>Status — 2026-06-04</H3>
         <Row gap={8} wrap>
-          <Pill tone="success" active>Stream A: distribution first</Pill>
-          <Pill tone="info" active>Stream B1+B2+B3: virtual media + boot + install-arch</Pill>
-          <Pill tone="neutral" active>Both in parallel (A is mostly waiting on CI anyway)</Pill>
+          <Pill tone="added" active>Stream A: brew + AUR + meta-cask shipped v0.1.0</Pill>
+          <Pill tone="added" active>Stream B: virtual media + boot + install-arch shipped v0.2.0</Pill>
+          <Pill tone="info" active>Next: archiso build for unattended install (paired with bmcctl install-arch)</Pill>
         </Row>
         <Text size="small" tone="tertiary" style={{ marginTop: 6, color: t.text.tertiary }}>
-          My pick: option 3. Distribution is mostly waiting-on-CI; while it runs we can
-          start coding B1 (the smallest of the new features) so v0.1.0 ships with
-          mount-iso already in it. That makes the v0.1.0 release more than just a
-          rename of what already works.
+          v0.2.0 commit <Code>bc44865</Code> ships 4 new commands, ~700 LOC,
+          11 new tests against an extended <Code>testmegarac</Code> mock that
+          enforces the same If-Match ETag dance the real AMI MegaRAC firmware
+          does. <Code>bmcctl install-arch</Code> is the orchestrator — eject
+          stale media, mount the ISO, set Boot=Cd/Once, PowerCycle, poll until
+          PowerState=On. With <Code>--no-wait</Code> it fires-and-forgets,
+          which is what you want once the ISO is fully unattended via airootfs
+          /root/install.sh (Arch's equivalent of kickstart/preseed/cloud-init).
         </Text>
       </Stack>
     </Stack>

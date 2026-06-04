@@ -29,10 +29,10 @@ VM_CPUS      ?= 2
 #   * macOS (brew qemu): /opt/homebrew/share/qemu/edk2-x86_64-code.fd
 #                        no /dev/kvm, accel=tcg
 #   * Arch Linux:        /usr/share/edk2/x64/OVMF_CODE.4m.fd
-#                        /dev/kvm available, accel=kvm:tcg
-# `kvm:tcg` means "use KVM if /dev/kvm is accessible, fall back to
-# TCG software emulation otherwise" — single canonical value that
-# does the right thing on any host.
+#                        /dev/kvm available, accel=kvm
+# Modern QEMU's `-accel` takes a SINGLE value (the legacy
+# `kvm:tcg` fallback syntax was retired with `-machine accel=`).
+# We pick `kvm` when /dev/kvm is reachable and `tcg` otherwise.
 OVMF_CODE ?= $(shell \
     for c in /usr/share/edk2/x64/OVMF_CODE.4m.fd \
              /usr/share/edk2-ovmf/x64/OVMF_CODE.4m.fd \
@@ -40,7 +40,7 @@ OVMF_CODE ?= $(shell \
              /opt/homebrew/share/qemu/edk2-x86_64-code.fd; do \
        [ -f "$$c" ] && echo "$$c" && break; \
     done)
-VM_ACCEL  ?= $(shell [ -e /dev/kvm ] && echo "kvm:tcg" || echo "tcg")
+VM_ACCEL  ?= $(shell [ -r /dev/kvm ] && [ -w /dev/kvm ] && echo "kvm" || echo "tcg")
 
 # Choose the build backend at runtime:
 #   * Linux + mkarchiso on PATH  ->  build-native.sh (FAST: native CPU,

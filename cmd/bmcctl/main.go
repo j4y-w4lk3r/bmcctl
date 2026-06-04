@@ -1036,20 +1036,25 @@ func cmdBoot(args []string) error {
 // cmdInstallArch is the orchestrator that hangs together the previous
 // three primitives. Sequence:
 //
-//  1. Eject any existing media in every CD slot. Idempotent — a
+//  1. Read the current PowerState. The starting state determines
+//     which Reset action we issue: Off => On, On => PowerCycle.
+//     Real AMI MegaRAC rejects PowerCycle when the host is Off
+//     ("InvalidOperation"); we have to use plain On in that case.
+//  2. Eject any existing media in every CD slot. Idempotent — a
 //     left-over mount from a previous run would otherwise pin the
 //     BMC's "ConnectedVia=URI" state and reject InsertMedia.
-//  2. Mount the new ISO into the first CD slot.
-//  3. PATCH /Systems/Self {Boot:{Cd, Once}} so the very next power-up
+//  3. Mount the new ISO into the first CD slot.
+//  4. PATCH /Systems/Self {Boot:{Cd, Once}} so the very next power-up
 //     boots the optical drive.
-//  4. Power-cycle the host. Real MegaRAC accepts PowerCycle even
-//     when the host is currently Off — it just ends in On.
-//  5. Poll /Systems/Self.PowerState until the host reports On (or
-//     the user-specified deadline expires).
+//  5. Issue the chosen power action (On or PowerCycle).
+//  6. Wait for PowerState=On  (POST + GRUB + kernel start).
+//  7. Wait for PowerState=Off (install.sh ran `systemctl poweroff`
+//     => install completed cleanly). Together with step 6 this is
+//     the canonical On->Off transition the README documents as the
+//     "install finished" signal.
 //
-// `--no-wait` short-circuits step 5 for the case where the user's
-// install ISO is unattended (kickstart/cloud-init/airootfs script)
-// and they want to fire-and-forget without keeping a terminal open.
+// `--no-wait` short-circuits steps 6+7 for fire-and-forget bring-up.
+// `--wait MIN` is the combined budget for both wait phases.
 //
 // The host coming up to "On" *only* means the BMC sees the host
 // drawing power; it does NOT confirm the install ran. For real
@@ -1080,7 +1085,19 @@ func cmdInstallArch(args []string) error {
 	// PowerState wait runs against the user-tunable deadline.
 	c := bmc.NewClient(entry.Host, entry.Username, pw)
 
-	// Step 1: eject every CD slot to guarantee a clean InsertMedia.
+	// Step 1: read the current power state so we know which Reset
+	// action to issue. AMI MegaRAC rejects PowerCycle when the host
+	// is currently Off, so we branch on initial state.
+	probeCtx, cancelP := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancelP()
+	sys, err := c.GetSystem(probeCtx)
+	if err != nil {
+		return fmt.Errorf("read initial PowerState: %w", err)
+	}
+	initialState := sys.PowerState
+	fmt.Printf("→ %s: initial PowerState=%s\n", entry.Host, initialState)
+
+	// Step 2: eject every CD slot to guarantee a clean InsertMedia.
 	ejectCtx, cancel1 := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel1()
 	all, err := c.ListVirtualMedia(ejectCtx)
@@ -1105,7 +1122,7 @@ func cmdInstallArch(args []string) error {
 		return errors.New("BMC exposes no CD/DVD VirtualMedia slot")
 	}
 
-	// Step 2: mount the ISO read-only.
+	// Step 3: mount the ISO read-only.
 	mountCtx, cancel2 := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel2()
 	if err := c.InsertMedia(mountCtx, chosen, *iso, true); err != nil {
@@ -1113,7 +1130,7 @@ func cmdInstallArch(args []string) error {
 	}
 	fmt.Printf("✓ %s: mounted %s into %s\n", entry.Host, *iso, chosen)
 
-	// Step 3: boot override -> Cd / Once.
+	// Step 4: boot override -> Cd / Once.
 	bootCtx, cancel3 := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel3()
 	if err := c.SetBootOverride(bootCtx, bmc.BootTargetCD, bmc.BootEnabledOnce); err != nil {
@@ -1121,29 +1138,77 @@ func cmdInstallArch(args []string) error {
 	}
 	fmt.Printf("✓ %s: boot override = Cd/Once\n", entry.Host)
 
-	// Step 4: power-cycle.
+	// Step 5: choose the power action based on the initial state.
+	// "Off"  -> "On"          (cold start)
+	// "On"   -> "PowerCycle"  (warm cycle, ends in On)
+	// other  -> "On"          (assume Off-ish, e.g. "Paused"/"Unknown"
+	//                          firmware-isms; "On" is always safe)
+	powerAction := "On"
+	if strings.EqualFold(initialState, "On") {
+		powerAction = "PowerCycle"
+	}
 	powCtx, cancel4 := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel4()
-	if err := c.Power(powCtx, "PowerCycle"); err != nil {
-		return fmt.Errorf("Power PowerCycle: %w", err)
+	if err := c.Power(powCtx, powerAction); err != nil {
+		return fmt.Errorf("Power %s: %w", powerAction, err)
 	}
-	fmt.Printf("✓ %s: PowerCycle issued\n", entry.Host)
+	fmt.Printf("✓ %s: %s issued\n", entry.Host, powerAction)
 
 	if *noWait {
 		fmt.Printf("→ --no-wait set; not polling. The host should now boot from %s.\n", *iso)
 		return nil
 	}
 
-	// Step 5: poll for PowerState=On, with a long deadline so we
-	// can survive the BIOS POST + BMC-link drop window.
-	pollCtx, cancel5 := context.WithTimeout(context.Background(), time.Duration(*waitMin)*time.Minute)
-	defer cancel5()
-	fmt.Printf("…  waiting up to %dm for PowerState=On\n", *waitMin)
-	got, err := c.PollPowerState(pollCtx, "On", 5*time.Second)
-	if err != nil {
-		return fmt.Errorf("waiting for host to come up: %w", err)
+	// Step 6 + 7: watch the canonical On->Off transition.
+	//
+	// Phase 6: wait for PowerState=On (chassis powered, BIOS POSTing
+	// or already past it). When initialState was "On" and we did a
+	// PowerCycle, the BMC may briefly report Off during the cycle's
+	// down phase; we let that go and the next On is what matters.
+	//
+	// Phase 7: wait for PowerState=Off. install.sh ends with
+	// `systemctl poweroff` on success, so On->Off is exactly the
+	// "install completed cleanly" signal. On failure install.sh
+	// drops to a shell instead of poweroffing — that path stays
+	// On and our wait will eventually time out, prompting the
+	// operator to attach SOL/KVM and look.
+	totalDeadline := time.Now().Add(time.Duration(*waitMin) * time.Minute)
+
+	// Phase 6: cap at 5m or remaining budget, whichever is smaller.
+	// 5m is generous for any modern board's POST + GRUB.
+	startedDeadline := time.Now().Add(5 * time.Minute)
+	if startedDeadline.After(totalDeadline) {
+		startedDeadline = totalDeadline
 	}
-	fmt.Printf("✓ %s: PowerState=%s — installer should be running\n", entry.Host, got)
-	fmt.Printf("→ open KVM to watch progress: bmcctl kvm %s\n", entry.Label)
+	startedCtx, cancel6 := context.WithDeadline(context.Background(), startedDeadline)
+	defer cancel6()
+	if strings.EqualFold(initialState, "On") {
+		// Give the cycle's down phase a moment to register so we
+		// don't immediately match the still-On reading from before
+		// the BMC processed PowerCycle.
+		select {
+		case <-time.After(15 * time.Second):
+		case <-startedCtx.Done():
+			return fmt.Errorf("waiting for cycle to register: %w", startedCtx.Err())
+		}
+	}
+	fmt.Printf("…  waiting up to %s for PowerState=On (POST + boot)\n",
+		time.Until(startedDeadline).Round(time.Second))
+	if _, err := c.PollPowerState(startedCtx, "On", 5*time.Second); err != nil {
+		return fmt.Errorf("waiting for host to power on: %w", err)
+	}
+	fmt.Printf("✓ %s: PowerState=On — installer is running\n", entry.Host)
+
+	// Phase 7: rest of the budget for the install itself.
+	doneCtx, cancel7 := context.WithDeadline(context.Background(), totalDeadline)
+	defer cancel7()
+	fmt.Printf("…  waiting up to %s for PowerState=Off (install completion)\n",
+		time.Until(totalDeadline).Round(time.Second))
+	if _, err := c.PollPowerState(doneCtx, "Off", 10*time.Second); err != nil {
+		return fmt.Errorf("waiting for install to complete: %w", err)
+	}
+	fmt.Printf("✓ %s: PowerState=Off — install completed (install.sh ran systemctl poweroff)\n", entry.Host)
+	fmt.Printf("→ next: bmcctl power %s on   (then: ssh %s@<host-ip>)\n",
+		entry.Label, entry.Username)
 	return nil
 }

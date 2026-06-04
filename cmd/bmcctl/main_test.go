@@ -277,6 +277,74 @@ func TestCmdInit_VaultByID(t *testing.T) {
 	}
 }
 
+// TestStreamB_InstallArchOrchestration walks the full happy path:
+//
+//	eject any stale media -> InsertMedia -> SetBootOverride(Cd/Once)
+//	-> PowerCycle -> PollPowerState(On)
+//
+// Done at the bmc.Client level (not via cmdInstallArch) because the
+// CLI form requires a registered host in ~/.config/bmcctl/hosts.json
+// which we don't want a test to write. The CLI is a thin shell around
+// these calls, and TestCmdBoot_Override below covers the wiring on
+// the SetBootOverride side end-to-end.
+func TestStreamB_InstallArchOrchestration(t *testing.T) {
+	open := false
+	srv, err := testmegarac.New(testmegarac.Options{StartLocked: &open, PowerState: "Off"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(srv.Close)
+
+	c := bmc.NewClient(srv.Host, "admin", "admin")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	const iso = "https://archlinux.example/iso/archlinux-x86_64.iso"
+
+	// Pre-mount stale media to exercise the pre-eject branch.
+	if err := c.InsertMedia(ctx, "CD1", "https://stale/old.iso", true); err != nil {
+		t.Fatal(err)
+	}
+
+	// Step 1 + 2: eject stale, mount fresh.
+	if err := c.EjectMedia(ctx, "CD1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.InsertMedia(ctx, "CD1", iso, true); err != nil {
+		t.Fatal(err)
+	}
+	if got := srv.VirtualMediaSnapshot()["CD1"]; got != iso {
+		t.Errorf("CD1 = %q, want %q", got, iso)
+	}
+
+	// Step 3: boot override.
+	if err := c.SetBootOverride(ctx, bmc.BootTargetCD, bmc.BootEnabledOnce); err != nil {
+		t.Fatal(err)
+	}
+	if tgt, en := srv.BootOverride(); tgt != "Cd" || en != "Once" {
+		t.Errorf("boot override = (%q,%q), want (Cd,Once)", tgt, en)
+	}
+
+	// Step 4: power-cycle.
+	if err := c.Power(ctx, "PowerCycle"); err != nil {
+		t.Fatal(err)
+	}
+	log := srv.PowerLog()
+	if len(log) != 1 || log[0] != "PowerCycle" {
+		t.Errorf("PowerLog = %v, want [PowerCycle]", log)
+	}
+
+	// Step 5: PowerState should be On after the cycle (the mock
+	// transitions Off->On for PowerCycle, mirroring real hardware).
+	got, err := c.PollPowerState(ctx, "On", 50*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "On" {
+		t.Errorf("final PowerState = %q, want On", got)
+	}
+}
+
 // TestCmdAdopt_Roundtrip exercises the recovery path: a BMC that
 // is already past the password-change gate (someone changed it
 // out-of-band — exactly the user's current state) should be

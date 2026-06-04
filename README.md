@@ -68,6 +68,37 @@ bmcctl mc nas                          # ipmitool mc info
 bmcctl kvm router                      # opens https://192.168.1.54/#/kvm
 ```
 
+## Virtual media + boot override (Stream B)
+
+Mount an installer ISO over Redfish and boot from it without touching the BIOS:
+
+```bash
+# Mount an installer ISO into the first CD/DVD VirtualMedia slot.
+# The URL must be reachable from the BMC (HTTPS w/ public CA, or
+# plain HTTP). BMCs typically can't follow redirects.
+bmcctl mount-iso nas --url https://archlinux.example/iso/archlinux-x86_64.iso
+
+# Eject everything currently mounted in the CD slot(s).
+bmcctl eject-iso nas
+
+# Set a one-shot boot override (default lifetime is "Once" — reverts
+# after the next boot, exactly what you want for "boot installer once").
+bmcctl boot nas cd
+bmcctl boot nas pxe --continuous   # sticky: useful for fleet PXE imaging
+bmcctl boot nas none               # clear any active override
+
+# Orchestrate the full unattended-install dance:
+#   eject -> mount ISO -> boot=cd-once -> power-cycle -> wait until host is up
+bmcctl install-arch nas \
+  --iso https://my-iso.example/archlinux-bmcctl.iso \
+  --wait 30
+# add --no-wait to fire-and-forget if your installer is fully unattended.
+```
+
+Under the hood every command speaks plain Redfish (`PATCH /Systems/Self {Boot}`, `POST /Managers/Self/VirtualMedia/<slot>/Actions/VirtualMedia.InsertMedia` and `…EjectMedia`). The PATCH carries the same `If-Match` ETag dance MegaRAC enforces for the password change, so it works against the real ASRock Rack firmware unmodified.
+
+For a fully unattended Arch install, build a custom `archiso` ISO with an `airootfs/root/install.sh` that auto-runs on boot — equivalent to a kickstart/preseed/cloud-init for Red Hat / Debian / cloud worlds. `bmcctl install-arch` is just the deployment driver; it doesn't care which ISO you point it at.
+
 ## Rotating credentials
 
 ```bash

@@ -67,6 +67,25 @@ type Server struct {
 	minPasswordLength int
 	maxPasswordLength int
 	powerLog          []string
+
+	// Boot override state recorded by PATCH /Systems/Self.
+	bootTarget  string
+	bootEnabled string
+
+	// VirtualMedia state. Slot map is keyed by ID ("CD1", "USB1").
+	vmedia map[string]*vmediaSlot
+}
+
+// vmediaSlot is the mock's view of one virtual media device.
+type vmediaSlot struct {
+	ID             string
+	Name           string
+	MediaTypes     []string
+	Image          string
+	ImageName      string
+	Inserted       bool
+	WriteProtected bool
+	ConnectedVia   string
 }
 
 // Options configures a new mock. Zero values get sane defaults so a
@@ -112,6 +131,18 @@ func New(opt Options) (*Server, error) {
 	s.passwordChangeReq = true
 	if opt.StartLocked != nil {
 		s.passwordChangeReq = *opt.StartLocked
+	}
+
+	// Default boot override matches a freshly-provisioned MegaRAC:
+	// override disabled, target None, enabled "Disabled".
+	s.bootTarget = "None"
+	s.bootEnabled = "Disabled"
+
+	// Default VirtualMedia slots. Real AMI MegaRAC firmware exposes
+	// CD1 + (sometimes) HD1; the mock ships both so tests can pick.
+	s.vmedia = map[string]*vmediaSlot{
+		"CD1": {ID: "CD1", Name: "Virtual CD", MediaTypes: []string{"CD", "DVD"}, ConnectedVia: "NotConnected"},
+		"HD1": {ID: "HD1", Name: "Virtual HD", MediaTypes: []string{"USBStick", "HDD"}, ConnectedVia: "NotConnected"},
 	}
 
 	cert, certPEM, keyPEM, err := makeCert()
@@ -162,6 +193,40 @@ func (s *Server) PowerLog() []string {
 	return append([]string(nil), s.powerLog...)
 }
 
+// SetPowerState lets a test forcibly transition the host's power
+// state to drive PollPowerState through a "wait until On" branch.
+func (s *Server) SetPowerState(state string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.powerState = state
+}
+
+// BootOverride returns (target, enabled) as the mock currently sees
+// them. Lets tests assert that PATCH /Systems/Self landed.
+func (s *Server) BootOverride() (target, enabled string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bootTarget, s.bootEnabled
+}
+
+// VirtualMediaSnapshot returns a flat copy of the (slotID -> image
+// URL or "") map. Empty string means nothing is inserted in that
+// slot. Used by tests to assert the InsertMedia/EjectMedia handlers
+// updated state correctly.
+func (s *Server) VirtualMediaSnapshot() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make(map[string]string, len(s.vmedia))
+	for id, v := range s.vmedia {
+		if v.Inserted {
+			out[id] = v.Image
+		} else {
+			out[id] = ""
+		}
+	}
+	return out
+}
+
 // ---- HTTP layer ----
 
 func (s *Server) mux() http.Handler {
@@ -209,9 +274,23 @@ func (s *Server) handleAny(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Boot override: GET (with ETag) and PATCH /Systems/Self.
+	if path == "/redfish/v1/Systems/Self" && r.Method == "PATCH" {
+		s.serveSystemPatch(w, r)
+		return
+	}
+
+	// VirtualMedia routes. The collection, each slot, and the
+	// two action endpoints (InsertMedia / EjectMedia).
+	if strings.HasPrefix(path, virtualMediaBase) {
+		s.serveVirtualMedia(w, r)
+		return
+	}
+
 	switch path {
 	case "/redfish/v1/Systems/Self":
-		s.serveSystem(w)
+		// GET only; the PATCH branch was handled above.
+		s.serveSystem(w, r)
 	case "/redfish/v1/Chassis/Self":
 		s.serveChassis(w)
 	case "/redfish/v1/Managers/Self":
@@ -222,6 +301,8 @@ func (s *Server) handleAny(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	}
 }
+
+const virtualMediaBase = "/redfish/v1/Managers/Self/VirtualMedia"
 
 // authOK checks HTTP Basic credentials against the current admin/pw.
 func (s *Server) authOK(r *http.Request) bool {
@@ -260,17 +341,27 @@ func (s *Server) serveServiceRoot(w http.ResponseWriter) {
 	})
 }
 
-func (s *Server) serveSystem(w http.ResponseWriter) {
+func (s *Server) serveSystem(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	w.Header().Set("ETag", s.systemETagLocked())
 	writeJSON(w, 200, map[string]any{
 		"@odata.id":    "/redfish/v1/Systems/Self",
+		"@odata.etag":  s.systemETagLocked(),
 		"Manufacturer": s.manufacturer,
 		"Model":        s.model,
 		"SKU":          s.sku,
 		"SerialNumber": s.serial,
 		"BiosVersion":  s.biosVersion,
 		"PowerState":   s.powerState,
+		"Boot": map[string]any{
+			"BootSourceOverrideTarget":  s.bootTarget,
+			"BootSourceOverrideEnabled": s.bootEnabled,
+			"BootSourceOverrideMode":    "UEFI",
+			"BootSourceOverrideTarget@Redfish.AllowableValues": []string{
+				"None", "Pxe", "Cd", "Hdd", "BiosSetup", "Usb", "Diags",
+			},
+		},
 		"ProcessorSummary": map[string]any{
 			"Model": s.cpuModel,
 			"Count": s.cpuCount,
@@ -283,6 +374,81 @@ func (s *Server) serveSystem(w http.ResponseWriter) {
 			"State":  "Enabled",
 		},
 	})
+}
+
+// systemETagLocked computes a content-derived ETag for /Systems/Self.
+// We hash only the fields the client can mutate via PATCH so a
+// successful boot-override PATCH naturally invalidates prior ETags.
+// Caller must hold s.mu.
+func (s *Server) systemETagLocked() string {
+	return fmt.Sprintf(`"sys-%s-%s"`, s.bootTarget, s.bootEnabled)
+}
+
+// serveSystemPatch handles PATCH /Systems/Self. Currently only
+// applies to the Boot override block; other fields (PowerState,
+// HostName, etc.) are read-only on real MegaRAC and we mirror that.
+//
+// Enforces the same If-Match precondition as the password PATCH:
+// real MegaRAC returns 428 PreconditionRequired without it.
+func (s *Server) serveSystemPatch(w http.ResponseWriter, r *http.Request) {
+	im := r.Header.Get("If-Match")
+	if im == "" {
+		writeError(w, 428, "Ami.1.0.PreconditionHeaderMissing",
+			"The request did not provide the required precondition, such as an If-Match or If-None-Match header.")
+		return
+	}
+	s.mu.Lock()
+	currentETag := s.systemETagLocked()
+	s.mu.Unlock()
+	if im != "*" && im != currentETag {
+		writeError(w, 412, "Base.1.12.PreconditionFailed",
+			"The ETag supplied did not match the ETag required for this resource.")
+		return
+	}
+
+	buf, err := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	if err != nil {
+		writeError(w, 400, "Base.1.12.MalformedJSON", "could not read body")
+		return
+	}
+	var body struct {
+		Boot struct {
+			Target  string `json:"BootSourceOverrideTarget"`
+			Enabled string `json:"BootSourceOverrideEnabled"`
+		} `json:"Boot"`
+	}
+	if err := json.Unmarshal(buf, &body); err != nil {
+		writeError(w, 400, "Base.1.12.MalformedJSON", "could not parse JSON")
+		return
+	}
+
+	allowedTargets := map[string]bool{
+		"None": true, "Pxe": true, "Cd": true, "Hdd": true,
+		"BiosSetup": true, "Usb": true, "Diags": true,
+	}
+	allowedEnabled := map[string]bool{
+		"Disabled": true, "Once": true, "Continuous": true,
+	}
+	if body.Boot.Target != "" && !allowedTargets[body.Boot.Target] {
+		writeError(w, 400, "Base.1.12.PropertyValueNotInList",
+			fmt.Sprintf("BootSourceOverrideTarget %q not allowed", body.Boot.Target))
+		return
+	}
+	if body.Boot.Enabled != "" && !allowedEnabled[body.Boot.Enabled] {
+		writeError(w, 400, "Base.1.12.PropertyValueNotInList",
+			fmt.Sprintf("BootSourceOverrideEnabled %q not allowed", body.Boot.Enabled))
+		return
+	}
+
+	s.mu.Lock()
+	if body.Boot.Target != "" {
+		s.bootTarget = body.Boot.Target
+	}
+	if body.Boot.Enabled != "" {
+		s.bootEnabled = body.Boot.Enabled
+	}
+	s.mu.Unlock()
+	w.WriteHeader(204)
 }
 
 func (s *Server) serveChassis(w http.ResponseWriter) {
@@ -428,6 +594,165 @@ func (s *Server) servePower(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	w.WriteHeader(204)
+}
+
+// serveVirtualMedia handles every path under
+// /redfish/v1/Managers/Self/VirtualMedia. This includes the
+// collection itself, each individual slot, and the two action
+// endpoints.
+func (s *Server) serveVirtualMedia(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	rest := strings.TrimPrefix(path, virtualMediaBase)
+	rest = strings.TrimPrefix(rest, "/")
+
+	// Top-level collection: GET /VirtualMedia (or /VirtualMedia/)
+	if rest == "" {
+		if r.Method != "GET" {
+			http.Error(w, "method not allowed", 405)
+			return
+		}
+		s.mu.Lock()
+		ids := make([]string, 0, len(s.vmedia))
+		for id := range s.vmedia {
+			ids = append(ids, id)
+		}
+		s.mu.Unlock()
+		// Stable order so test assertions are predictable.
+		sortStrings(ids)
+		members := make([]map[string]any, 0, len(ids))
+		for _, id := range ids {
+			members = append(members, map[string]any{
+				"@odata.id": virtualMediaBase + "/" + id,
+			})
+		}
+		writeJSON(w, 200, map[string]any{
+			"@odata.id":           virtualMediaBase,
+			"Members":             members,
+			"Members@odata.count": len(members),
+		})
+		return
+	}
+
+	// Action endpoints look like "<slot>/Actions/VirtualMedia.<verb>".
+	if i := strings.Index(rest, "/Actions/"); i > 0 {
+		slotID := rest[:i]
+		action := rest[i+len("/Actions/"):]
+		s.serveVirtualMediaAction(w, r, slotID, action)
+		return
+	}
+
+	// Otherwise it's a slot GET.
+	if r.Method != "GET" {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	s.mu.Lock()
+	slot, ok := s.vmedia[rest]
+	s.mu.Unlock()
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	writeJSON(w, 200, slotJSON(slot))
+}
+
+func (s *Server) serveVirtualMediaAction(w http.ResponseWriter, r *http.Request, slotID, action string) {
+	if r.Method != "POST" {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+	s.mu.Lock()
+	slot, ok := s.vmedia[slotID]
+	s.mu.Unlock()
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	switch action {
+	case "VirtualMedia.InsertMedia":
+		var body struct {
+			Image          string `json:"Image"`
+			Inserted       *bool  `json:"Inserted"`
+			WriteProtected *bool  `json:"WriteProtected"`
+		}
+		buf, _ := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+		if err := json.Unmarshal(buf, &body); err != nil || body.Image == "" {
+			writeError(w, 400, "Base.1.12.PropertyMissing", "Image is required")
+			return
+		}
+		s.mu.Lock()
+		slot.Image = body.Image
+		slot.ImageName = imageNameFromURL(body.Image)
+		slot.Inserted = true
+		if body.Inserted != nil {
+			slot.Inserted = *body.Inserted
+		}
+		slot.WriteProtected = true
+		if body.WriteProtected != nil {
+			slot.WriteProtected = *body.WriteProtected
+		}
+		slot.ConnectedVia = "URI"
+		s.mu.Unlock()
+		w.WriteHeader(204)
+	case "VirtualMedia.EjectMedia":
+		s.mu.Lock()
+		slot.Image = ""
+		slot.ImageName = ""
+		slot.Inserted = false
+		slot.WriteProtected = false
+		slot.ConnectedVia = "NotConnected"
+		s.mu.Unlock()
+		w.WriteHeader(204)
+	default:
+		http.Error(w, "unknown action: "+action, 404)
+	}
+}
+
+func slotJSON(s *vmediaSlot) map[string]any {
+	mediaTypes := append([]string(nil), s.MediaTypes...)
+	connectedVia := s.ConnectedVia
+	if connectedVia == "" {
+		connectedVia = "NotConnected"
+	}
+	return map[string]any{
+		"@odata.id":      virtualMediaBase + "/" + s.ID,
+		"Id":             s.ID,
+		"Name":           s.Name,
+		"MediaTypes":     mediaTypes,
+		"Image":          s.Image,
+		"ImageName":      s.ImageName,
+		"Inserted":       s.Inserted,
+		"WriteProtected": s.WriteProtected,
+		"ConnectedVia":   connectedVia,
+		"Actions": map[string]any{
+			"#VirtualMedia.InsertMedia": map[string]any{
+				"target": virtualMediaBase + "/" + s.ID + "/Actions/VirtualMedia.InsertMedia",
+			},
+			"#VirtualMedia.EjectMedia": map[string]any{
+				"target": virtualMediaBase + "/" + s.ID + "/Actions/VirtualMedia.EjectMedia",
+			},
+		},
+	}
+}
+
+// imageNameFromURL extracts the basename from a URL — the same value
+// real MegaRAC stamps into ImageName after a successful insert.
+func imageNameFromURL(u string) string {
+	if i := strings.LastIndex(u, "/"); i >= 0 && i < len(u)-1 {
+		return u[i+1:]
+	}
+	return u
+}
+
+// sortStrings is a tiny in-place sort to avoid pulling in
+// "sort" just for one usage.
+func sortStrings(ss []string) {
+	for i := 1; i < len(ss); i++ {
+		for j := i; j > 0 && ss[j-1] > ss[j]; j-- {
+			ss[j-1], ss[j] = ss[j], ss[j-1]
+		}
+	}
 }
 
 // ---- helpers ----

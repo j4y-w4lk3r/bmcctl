@@ -1,0 +1,12 @@
+# Extra packages baked into the bmcctl installer ISO live environment.
+# These layer onto Arch's upstream `releng` packages.x86_64 (which already
+# carries base, archinstall, openssh, networkmanager, gptfdisk, etc.).
+#
+# Only add things install.sh actually needs at runtime — every package
+# adds to the ISO size. Comments explain why each is here.
+gptfdisk        # sgdisk(8); releng already ships it but pin so an upstream rename surfaces in CI rather than at 3am
+parted          # partprobe(8); fallback re-read if sgdisk's autoprobe is slow
+dosfstools      # mkfs.fat for the ESP
+e2fsprogs       # mkfs.ext4
+arch-install-scripts  # pacstrap + genfstab + arch-chroot
+curl            # network probe in install.sh

@@ -1,0 +1,19 @@
+
+=== bmcctl Arch installer ===
+
+This ISO auto-installs Arch Linux when it boots from the BMC's
+virtual media. Watch progress on this serial console (SOL).
+
+If you are reading this from a login prompt, the installer either
+finished successfully (in which case the host has been told to
+poweroff and the BMC should report PowerState=Off shortly) OR the
+installer failed and dropped to a shell so you can debug.
+
+Install log: /var/log/bmcctl-install.log
+Configuration: /root/install-config.env
+Installer script: /root/install.sh
+
+To re-run the install manually:
+  systemctl restart bmcctl-installer.service
+  journalctl -fu bmcctl-installer.service
+

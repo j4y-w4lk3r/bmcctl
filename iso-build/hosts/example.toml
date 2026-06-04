@@ -1,0 +1,58 @@
+# Per-host configuration for the bmcctl Arch installer ISO.
+#
+# Copy this to bmcctl/iso-build/hosts/<label>.toml and edit. The
+# build pipeline (`make iso HOST=<label>`) reads this file, renders
+# install-config.env from it, and bakes the env into the ISO at
+# /root/install-config.env. The on-ISO install.sh sources that env
+# and runs an unattended install.
+#
+# Filename of the resulting ISO: bmcctl-installer-<label>-<date>.iso
+
+[host]
+# DNS hostname assigned to the new system. No trailing dot.
+hostname = "nas"
+
+# Block device the installer wipes and partitions. NVMe uses
+# /dev/nvme0n1; SATA uses /dev/sda; eMMC uses /dev/mmcblk0. The
+# installer refuses to run unless this device exists, so a typo
+# stops the script before it touches anything.
+target_disk = "/dev/nvme0n1"
+
+# REQUIRED safety acknowledgement. Set to "yes" to confirm you
+# understand TARGET_DISK above will be wiped. Anything else aborts.
+wipe_disk = "yes"
+
+# Locale + timezone applied at first boot.
+timezone = "Europe/Warsaw"
+locale   = "en_US.UTF-8"
+keymap   = "us"
+
+[user]
+# Local user created during the install. SSH key below is dropped
+# into ~/.ssh/authorized_keys; root is locked.
+name = "j4y"
+
+# Path to a public key file (relative to bmcctl/iso-build/, or
+# absolute). The build will read this file and embed it into the
+# ISO. Use whichever YubiKey-backed key you want.
+ssh_pubkey_file = "~/.ssh/id_ed25519_yubikey.pub"
+
+# Optional: a hashed password for sudo. If empty/omitted, the user
+# account is locked and gets NOPASSWD sudo (suitable for fully
+# automated provisioning where SSH key is the only credential).
+#
+# Generate with:   mkpasswd -m sha-512 'mysecret'   (from `whois`)
+# Or:              openssl passwd -6 'mysecret'
+password_hash = ""
+
+[packages]
+# Packages installed into the new system in addition to the
+# bmcctl installer's defaults (base, linux, networkmanager,
+# openssh, sudo, vim, git, curl, htop, intel-ucode).
+extra = [
+    "amd-ucode",      # if this is an AMD CPU; install.sh keeps intel-ucode either way
+    "zsh",
+    "tmux",
+    "rsync",
+    "mosh",
+]

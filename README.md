@@ -99,6 +99,8 @@ Under the hood every command speaks plain Redfish (`PATCH /Systems/Self {Boot}`,
 
 For a fully unattended Arch install, build a custom `archiso` ISO with an `airootfs/root/install.sh` that auto-runs on boot — equivalent to a kickstart/preseed/cloud-init for Red Hat / Debian / cloud worlds. `bmcctl install-arch` is just the deployment driver; it doesn't care which ISO you point it at.
 
+The companion ISO builder lives at [`iso-build/`](iso-build/README.md). It produces per-host installer ISOs from a small TOML config (`iso-build/hosts/<label>.toml`), runs `mkarchiso` inside an Arch Docker container so you can build from macOS, and drops the result into `iso-build/out/`. The full pipeline is `make iso HOST=<label>` → `make publish HOST=<label>` → `bmcctl install-arch <label> --iso https://...`.
+
 ## Rotating credentials
 
 ```bash

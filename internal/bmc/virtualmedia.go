@@ -160,11 +160,42 @@ func (c *Client) InsertMedia(ctx context.Context, slotID, imageURL string, write
 	if imageURL == "" {
 		return fmt.Errorf("imageURL required")
 	}
+	// TransferProtocolType is technically OPTIONAL per the Redfish
+	// schema, but AMI MegaRAC firmware (W680D4U-2L2T/G5 v6.01.0)
+	// returns ActionParameterMissing without it. Derive from scheme.
+	//
+	// AMI quirks observed on real hardware:
+	//   - "HTTP" not in AllowedValues; only HTTPS / CIFS / NFS work
+	//   - HTTPS rejects self-signed certs at TLS handshake — only
+	//     publicly-trusted CA chains (or pre-uploaded BMC-trusted
+	//     ones) are accepted. Plain LAN bring-up should use NFS.
+	//   - HTTPS requires UserName + Password in the body even if
+	//     blank; NFS rejects them as PropertyUnknown.
+	//   - URL filenames containing multiple dots (e.g. an embedded
+	//     date like 2026.06.04) trigger the AMI URL parser quirk
+	//     where Image is mis-extracted; use a simple filename.
+	lower := strings.ToLower(imageURL)
+	var proto string
 	body := map[string]any{
 		"Image":          imageURL,
 		"Inserted":       true,
 		"WriteProtected": writeProtected,
 	}
+	switch {
+	case strings.HasPrefix(lower, "nfs://"):
+		proto = "NFS"
+	case strings.HasPrefix(lower, "cifs://") || strings.HasPrefix(lower, "smb://"):
+		proto = "CIFS"
+	case strings.HasPrefix(lower, "https://"):
+		proto = "HTTPS"
+		body["UserName"] = ""
+		body["Password"] = ""
+	default:
+		proto = "HTTPS"
+		body["UserName"] = ""
+		body["Password"] = ""
+	}
+	body["TransferProtocolType"] = proto
 	target := virtualMediaPath + "/" + slotID + "/Actions/VirtualMedia.InsertMedia"
 	status, errBody, err := c.do(ctx, "POST", target, body, nil)
 	if err != nil {

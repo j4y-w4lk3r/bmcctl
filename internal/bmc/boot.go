@@ -22,6 +22,7 @@ package bmc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -79,9 +80,28 @@ func FormatBootTarget(s string) (BootOverrideTarget, error) {
 // The ETag dance matches SetPassword's: GET to capture, PATCH with
 // If-Match. Falls back to "*" if the GET returns no ETag (older
 // MegaRAC builds).
+//
+// AMI MegaRAC quirk: newer firmware (W680D4U-2L2T/G5 v6.01.0) returns
+// Ami.1.0.OperationSupportedInFutureStateURI on direct Systems/Self
+// PATCH and instead exposes Boot at the Settings ("future state")
+// resource at /Systems/Self/SD. We try /SD first when the system
+// resource advertises a Settings link, and fall back to the direct
+// path on older firmware that still accepts it.
 func (c *Client) SetBootOverride(ctx context.Context, target BootOverrideTarget, enabled BootOverrideEnabled) error {
-	const path = "/redfish/v1/Systems/Self"
+	primary := "/redfish/v1/Systems/Self"
+	settings := "/redfish/v1/Systems/Self/SD"
 
+	if err := c.patchBoot(ctx, settings, target, enabled); err == nil {
+		return nil
+	} else if !isFutureStateRedirect(err) && !isResourceMissing(err) {
+		return err
+	}
+	return c.patchBoot(ctx, primary, target, enabled)
+}
+
+// patchBoot is the inner ETag GET + PATCH pair for the Boot subset
+// of a ComputerSystem (or its Settings sibling).
+func (c *Client) patchBoot(ctx context.Context, path string, target BootOverrideTarget, enabled BootOverrideEnabled) error {
 	var doc map[string]any
 	status, headers, errBody, err := c.doFull(ctx, "GET", path, nil, nil, &doc)
 	if err != nil {
@@ -115,6 +135,26 @@ func (c *Client) SetBootOverride(ctx context.Context, target BootOverrideTarget,
 		return parseRedfishError(status, errBody)
 	}
 	return nil
+}
+
+func isFutureStateRedirect(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "OperationSupportedInFutureStateURI")
+}
+
+func isResourceMissing(err error) bool {
+	if err == nil {
+		return false
+	}
+	var re *RedfishError
+	if errors.As(err, &re) && re.Status == 404 {
+		return true
+	}
+	s := err.Error()
+	return strings.Contains(s, "ResourceMissingAtURI") ||
+		strings.Contains(s, "ResourceNotFound")
 }
 
 // PollPowerState repeatedly GETs /Systems/Self.PowerState every

@@ -98,30 +98,54 @@ done
 
 # 5. Run mkarchiso. mkarchiso needs root for pacstrap + mksquashfs
 # + chroot; we use sudo (assumed passwordless on the test machine).
+# Cleanup is wired into a trap NOW, before the build runs, so an
+# interrupted build doesn't leave /sys + /proc + /dev bind-mounted
+# in our work dir forever.
+cleanup_mkarchiso_mounts() {
+    # mkarchiso bind-mounts /dev /proc /sys into the chroot for
+    # pacstrap; on success it intentionally leaves the work dir
+    # intact for inspection (and therefore the mounts too). We
+    # always tear them down ourselves. -l (lazy) tolerates a busy
+    # mount in case anything still has fds open inside the chroot.
+    local m
+    for m in dev proc sys; do
+        sudo umount -lq "$WORK_DIR/mkarchiso/x86_64/airootfs/$m" 2>/dev/null || true
+    done
+}
+trap cleanup_mkarchiso_mounts EXIT
+
 echo "::: starting mkarchiso (native, $(nproc) cores)"
 sudo mkarchiso -v \
     -w "$WORK_DIR/mkarchiso" \
     -o "$OUT_DIR" \
     "$PROFILE_BASE"
 
-# 6. Take ownership back from root. mkarchiso writes the ISO as
-# root because it ran as root; chown so the user can publish/test
-# without needing sudo for everything afterwards.
-sudo chown -R "$USER:$USER" "$OUT_DIR" "$WORK_DIR"
+# 6. Tear down the chroot bind mounts so the rest of the script
+# (chown, find, du) doesn't trip on /sys/'s read-only kernel files.
+cleanup_mkarchiso_mounts
 
-# 7. Rename the output ISO to include the host label.
+# 7. Rename the output ISO + take ownership. mkarchiso wrote the
+# ISO as root; chown so the user can publish/move/inspect it
+# without sudo.
 DATE=$(date +%Y.%m.%d)
 # shellcheck disable=SC2012
-GENERIC_ISO=$(ls -t "$OUT_DIR"/bmcctl-installer-*x86_64.iso 2>/dev/null | head -n1 || true)
+GENERIC_ISO=$(sudo ls -t "$OUT_DIR"/bmcctl-installer-*x86_64.iso 2>/dev/null | head -n1 || true)
 if [[ -z $GENERIC_ISO ]]; then
     echo "build-native: mkarchiso completed but no ISO appeared in $OUT_DIR" >&2
     exit 5
 fi
 HOST_ISO="$OUT_DIR/bmcctl-installer-$LABEL-$DATE-x86_64.iso"
 if [[ $GENERIC_ISO != "$HOST_ISO" ]]; then
-    mv -f "$GENERIC_ISO" "$HOST_ISO"
+    sudo mv -f "$GENERIC_ISO" "$HOST_ISO"
 fi
-sha256sum "$HOST_ISO" | tee "$HOST_ISO.sha256"
+sudo chown "$USER:$USER" "$HOST_ISO"
+sha256sum "$HOST_ISO" | sudo tee "$HOST_ISO.sha256" >/dev/null
+sudo chown "$USER:$USER" "$HOST_ISO.sha256"
+
+# 8. Nuke the root-owned mkarchiso scratch dir so the user can
+# `make clean` without sudo. We've already extracted the ISO; the
+# chroot tree is no longer useful for anything (and is ~3 GB).
+sudo rm -rf "$WORK_DIR/mkarchiso"
 
 echo
 echo "build-native: wrote $HOST_ISO"

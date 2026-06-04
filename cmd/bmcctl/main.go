@@ -37,6 +37,19 @@
 //	bmcctl ls                      list BMCs known to local config
 //	bmcctl kvm   <host|label>      open https://host/#/kvm in browser
 //
+//	bmcctl mount-iso  <host|label> --url URL [--slot CD1] [--no-write-protect]
+//	    Mount an ISO over Redfish VirtualMedia. The URL must be
+//	    reachable from the BMC (HTTPS with public CA, or plain HTTP).
+//	bmcctl eject-iso  <host|label> [--slot CD1]
+//	    Detach whatever is currently in the slot.
+//	bmcctl boot       <host|label> <target> [--continuous]
+//	    Set a one-shot (default) or continuous boot override. Targets:
+//	    none, pxe, cd, disk, bios, usb, diags.
+//	bmcctl install-arch <host|label> --iso URL [--wait MIN] [--no-wait]
+//	    Orchestrate eject -> mount-iso -> boot=cd-once -> power-cycle ->
+//	    poll PowerState until the host comes up. With --no-wait we
+//	    return as soon as the cycle command lands.
+//
 // Local config: ~/.config/bmcctl/hosts.json (non-secret).
 // Secrets: 1Password, accessed via the `op` CLI on demand.
 package main
@@ -105,6 +118,14 @@ func main() {
 		err = cmdLs(args)
 	case "kvm":
 		err = cmdKVM(args)
+	case "mount-iso":
+		err = cmdMountISO(args)
+	case "eject-iso":
+		err = cmdEjectISO(args)
+	case "boot":
+		err = cmdBoot(args)
+	case "install-arch":
+		err = cmdInstallArch(args)
 	case "-v", "--version", "version":
 		fmt.Printf("bmcctl %s (commit %s, built %s)\n", version, commit, date)
 		return
@@ -137,6 +158,12 @@ USAGE
   bmcctl sensors <host|label>
   bmcctl ls
   bmcctl kvm    <host|label>
+
+  bmcctl mount-iso    <host|label> --url URL [--slot CD1] [--no-write-protect]
+  bmcctl eject-iso    <host|label> [--slot CD1]
+  bmcctl boot         <host|label> <none|pxe|cd|disk|bios|usb|diags> [--continuous]
+  bmcctl install-arch <host|label> --iso URL [--wait MIN] [--no-wait]
+
   bmcctl -v / --version
   bmcctl -h / --help
 
@@ -853,4 +880,270 @@ func valOrDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// ----- mount-iso / eject-iso -----
+
+// cmdMountISO mounts an ISO over Redfish VirtualMedia. The slot
+// defaults to whatever the BMC advertises as a CD/DVD-capable slot
+// (typically CD1 on AMI MegaRAC). Surface the slot the user actually
+// hit so re-mounting / ejection from another shell is unambiguous.
+func cmdMountISO(args []string) error {
+	fs := flag.NewFlagSet("mount-iso", flag.ContinueOnError)
+	url := fs.String("url", "", "HTTP(S) URL of the ISO image (must be reachable from the BMC)")
+	slot := fs.String("slot", "", "VirtualMedia slot ID (default: first CD/DVD slot)")
+	noWP := fs.Bool("no-write-protect", false, "mount image read-write (rare; default is read-only)")
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(positional) < 1 {
+		return errors.New("usage: bmcctl mount-iso <host|label> --url URL [--slot CD1]")
+	}
+	if *url == "" {
+		return errors.New("--url is required")
+	}
+	entry, pw, err := resolveAuthed(positional[0])
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := bmc.NewClient(entry.Host, entry.Username, pw)
+
+	chosen := *slot
+	if chosen == "" {
+		s, err := c.SelectCDSlot(ctx)
+		if err != nil {
+			return fmt.Errorf("auto-pick CD slot: %w", err)
+		}
+		chosen = s.ID
+	}
+	if err := c.InsertMedia(ctx, chosen, *url, !*noWP); err != nil {
+		return fmt.Errorf("InsertMedia %s: %w", chosen, err)
+	}
+	fmt.Printf("✓ %s: mounted %s into %s%s\n",
+		entry.Host, *url, chosen,
+		ternary(*noWP, " (read-write)", ""))
+	return nil
+}
+
+// cmdEjectISO detaches whatever image is currently mounted in the
+// slot. If --slot is not given we eject every CD/DVD slot the BMC
+// exposes (almost always exactly one — CD1 — but it's cheap and
+// makes the command idempotent and forgiving).
+func cmdEjectISO(args []string) error {
+	fs := flag.NewFlagSet("eject-iso", flag.ContinueOnError)
+	slot := fs.String("slot", "", "VirtualMedia slot ID (default: every CD/DVD slot)")
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(positional) < 1 {
+		return errors.New("usage: bmcctl eject-iso <host|label> [--slot CD1]")
+	}
+	entry, pw, err := resolveAuthed(positional[0])
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := bmc.NewClient(entry.Host, entry.Username, pw)
+
+	var targets []string
+	if *slot != "" {
+		targets = []string{*slot}
+	} else {
+		all, err := c.ListVirtualMedia(ctx)
+		if err != nil {
+			return fmt.Errorf("list virtual media: %w", err)
+		}
+		for _, s := range all {
+			if s.IsCD() {
+				targets = append(targets, s.ID)
+			}
+		}
+		if len(targets) == 0 {
+			return errors.New("BMC exposes no CD/DVD VirtualMedia slot to eject")
+		}
+	}
+	for _, id := range targets {
+		if err := c.EjectMedia(ctx, id); err != nil {
+			return fmt.Errorf("EjectMedia %s: %w", id, err)
+		}
+		fmt.Printf("✓ %s: ejected %s\n", entry.Host, id)
+	}
+	return nil
+}
+
+func ternary(b bool, yes, no string) string {
+	if b {
+		return yes
+	}
+	return no
+}
+
+// ----- boot -----
+
+// cmdBoot writes a Redfish BootSourceOverride. Default lifetime is
+// "Once" because that's what virtually every operational use case
+// wants ("boot from CD once to install, then revert"); --continuous
+// is opt-in for fleet imaging via PXE.
+func cmdBoot(args []string) error {
+	fs := flag.NewFlagSet("boot", flag.ContinueOnError)
+	continuous := fs.Bool("continuous", false, "stick across reboots until cleared (default: Once)")
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(positional) < 2 {
+		return errors.New("usage: bmcctl boot <host|label> <none|pxe|cd|disk|bios|usb|diags> [--continuous]")
+	}
+	entry, pw, err := resolveAuthed(positional[0])
+	if err != nil {
+		return err
+	}
+	target, err := bmc.FormatBootTarget(positional[1])
+	if err != nil {
+		return err
+	}
+
+	enabled := bmc.BootEnabledOnce
+	if *continuous {
+		enabled = bmc.BootEnabledContinuous
+	}
+	if target == bmc.BootTargetNone {
+		// `boot ... none` means "clear the override" — flip the
+		// enabled value to Disabled regardless of --continuous so
+		// the user has a single muscle-memory move for unwinding.
+		enabled = bmc.BootEnabledDisabled
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	c := bmc.NewClient(entry.Host, entry.Username, pw)
+	if err := c.SetBootOverride(ctx, target, enabled); err != nil {
+		return err
+	}
+	fmt.Printf("✓ %s: boot override = %s/%s\n", entry.Host, target, enabled)
+	return nil
+}
+
+// ----- install-arch -----
+
+// cmdInstallArch is the orchestrator that hangs together the previous
+// three primitives. Sequence:
+//
+//  1. Eject any existing media in every CD slot. Idempotent — a
+//     left-over mount from a previous run would otherwise pin the
+//     BMC's "ConnectedVia=URI" state and reject InsertMedia.
+//  2. Mount the new ISO into the first CD slot.
+//  3. PATCH /Systems/Self {Boot:{Cd, Once}} so the very next power-up
+//     boots the optical drive.
+//  4. Power-cycle the host. Real MegaRAC accepts PowerCycle even
+//     when the host is currently Off — it just ends in On.
+//  5. Poll /Systems/Self.PowerState until the host reports On (or
+//     the user-specified deadline expires).
+//
+// `--no-wait` short-circuits step 5 for the case where the user's
+// install ISO is unattended (kickstart/cloud-init/airootfs script)
+// and they want to fire-and-forget without keeping a terminal open.
+//
+// The host coming up to "On" *only* means the BMC sees the host
+// drawing power; it does NOT confirm the install ran. For real
+// progress signal we will eventually want a `bmcctl install-status`
+// that reads SEL or the BMC-recorded console — out of scope for v0.2.0.
+func cmdInstallArch(args []string) error {
+	fs := flag.NewFlagSet("install-arch", flag.ContinueOnError)
+	iso := fs.String("iso", "", "HTTP(S) URL of the Arch installer ISO (must be reachable from the BMC)")
+	waitMin := fs.Int("wait", 30, "minutes to wait for PowerState=On after the cycle (use --no-wait to disable)")
+	noWait := fs.Bool("no-wait", false, "return as soon as the power-cycle command lands; do not poll PowerState")
+	slot := fs.String("slot", "", "VirtualMedia slot ID (default: first CD/DVD slot)")
+	positional, err := parseInterspersed(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(positional) < 1 {
+		return errors.New("usage: bmcctl install-arch <host|label> --iso URL [--wait MIN] [--no-wait]")
+	}
+	if *iso == "" {
+		return errors.New("--iso URL is required")
+	}
+	entry, pw, err := resolveAuthed(positional[0])
+	if err != nil {
+		return err
+	}
+
+	// Each step gets its own short context; only the final
+	// PowerState wait runs against the user-tunable deadline.
+	c := bmc.NewClient(entry.Host, entry.Username, pw)
+
+	// Step 1: eject every CD slot to guarantee a clean InsertMedia.
+	ejectCtx, cancel1 := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel1()
+	all, err := c.ListVirtualMedia(ejectCtx)
+	if err != nil {
+		return fmt.Errorf("list virtual media: %w", err)
+	}
+	chosen := *slot
+	for _, s := range all {
+		if s.IsCD() {
+			if chosen == "" {
+				chosen = s.ID
+			}
+			if s.Inserted {
+				if err := c.EjectMedia(ejectCtx, s.ID); err != nil {
+					return fmt.Errorf("pre-eject %s: %w", s.ID, err)
+				}
+				fmt.Printf("✓ %s: ejected stale media from %s\n", entry.Host, s.ID)
+			}
+		}
+	}
+	if chosen == "" {
+		return errors.New("BMC exposes no CD/DVD VirtualMedia slot")
+	}
+
+	// Step 2: mount the ISO read-only.
+	mountCtx, cancel2 := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel2()
+	if err := c.InsertMedia(mountCtx, chosen, *iso, true); err != nil {
+		return fmt.Errorf("InsertMedia %s: %w", chosen, err)
+	}
+	fmt.Printf("✓ %s: mounted %s into %s\n", entry.Host, *iso, chosen)
+
+	// Step 3: boot override -> Cd / Once.
+	bootCtx, cancel3 := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel3()
+	if err := c.SetBootOverride(bootCtx, bmc.BootTargetCD, bmc.BootEnabledOnce); err != nil {
+		return fmt.Errorf("SetBootOverride: %w", err)
+	}
+	fmt.Printf("✓ %s: boot override = Cd/Once\n", entry.Host)
+
+	// Step 4: power-cycle.
+	powCtx, cancel4 := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel4()
+	if err := c.Power(powCtx, "PowerCycle"); err != nil {
+		return fmt.Errorf("Power PowerCycle: %w", err)
+	}
+	fmt.Printf("✓ %s: PowerCycle issued\n", entry.Host)
+
+	if *noWait {
+		fmt.Printf("→ --no-wait set; not polling. The host should now boot from %s.\n", *iso)
+		return nil
+	}
+
+	// Step 5: poll for PowerState=On, with a long deadline so we
+	// can survive the BIOS POST + BMC-link drop window.
+	pollCtx, cancel5 := context.WithTimeout(context.Background(), time.Duration(*waitMin)*time.Minute)
+	defer cancel5()
+	fmt.Printf("…  waiting up to %dm for PowerState=On\n", *waitMin)
+	got, err := c.PollPowerState(pollCtx, "On", 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("waiting for host to come up: %w", err)
+	}
+	fmt.Printf("✓ %s: PowerState=%s — installer should be running\n", entry.Host, got)
+	fmt.Printf("→ open KVM to watch progress: bmcctl kvm %s\n", entry.Label)
+	return nil
 }

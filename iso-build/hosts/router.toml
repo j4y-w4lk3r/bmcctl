@@ -1,0 +1,68 @@
+# Per-host configuration for the bmcctl Arch installer ISO.
+#
+# Target hardware: Custom Router
+#   - ASRock W680D4U-2L2T/G5  (Aspeed AST2600 BMC, AMI MegaRAC, IPMI/Redfish)
+#   - Intel Core i5-13500     (14 cores, Raptor Lake)
+#   - 32 GB DDR5 (2x16GB Crucial 4800)
+#   - Samsung 990 Pro 2TB NVMe  -> /dev/nvme0n1
+#   - 2x 1G + 2x 10G onboard + Mellanox ConnectX-4 Lx 2x25G SFP28
+#
+# Smoke-test command (Arch box, ~2 min, no real hardware touched):
+#     make iso HOST=router && make test HOST=router
+#
+# Production install (DESTROYS the NVMe — only run when ready):
+#     make iso HOST=router
+#     make publish HOST=router
+#     bmcctl install-arch router --iso https://<b2-url>/...
+
+[host]
+hostname = "router"
+
+# Samsung 990 Pro 2TB NVMe is the only block device on this board.
+# Mellanox card has no storage; SATA is unpopulated.
+# Verify on the live ISO with:   lsblk
+target_disk = "/dev/nvme0n1"
+
+# REQUIRED acknowledgement that target_disk gets wiped. Anything
+# other than the literal string "yes" aborts before sgdisk runs.
+wipe_disk = "yes"
+
+timezone = "Europe/Warsaw"
+locale   = "en_US.UTF-8"
+keymap   = "us"
+
+[user]
+name = "j4y"
+
+# Plain ed25519 — same pattern as test.toml. No YubiKey touch
+# required on every login (deferred to a separate decision once
+# the box is up; pam_u2f for sudo is the likely follow-up).
+ssh_pubkey_file = "~/.ssh/id_ed25519.pub"
+
+# Empty -> account is `passwd -l`'d (no console login at all).
+# Wheel sudo runs NOPASSWD because the SSH key is the proof.
+# Lock-mode is the right default for a headless server reachable
+# only via key.
+password_hash = ""
+
+[packages]
+# install.sh already pulls: base, linux, linux-firmware,
+# networkmanager, openssh, sudo, vim, git, curl, htop, intel-ucode.
+# These are the router-specific extras on top of that:
+extra = [
+    "nftables",            # firewall (iptables replacement)
+    "conntrack-tools",     # NAT / connection-tracking debugging
+    "ethtool",             # NIC inspection (Mellanox + onboard)
+    "tcpdump",             # packet capture
+    "mtr",                 # path / latency diagnostics
+    "iperf3",              # throughput testing across the 25G links
+    "bind-tools",          # dig, nslookup, host
+    "nmap",                # port scanning
+    "tailscale",           # overlay VPN (paired with the future homelab-vpn)
+    "zsh",                 # shell preference
+    "tmux",                # for SOL/SSH session multiplexing
+    "rsync",               # standard transfer tool
+    "mosh",                # mobile shell — survives roaming
+    "tree",                # filesystem inspection
+    "lsof",                # who-has-what-open debugging
+]

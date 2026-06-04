@@ -122,7 +122,11 @@ USER_PUBKEY=$(<"$PUBKEY_PATH")
 # Optionally drop the keyfile alongside the env file so the live
 # ISO can ship it as an actual file too (not strictly needed —
 # install.sh writes from $USER_PUBKEY — but useful for debugging).
+# mkdir the parent first; .ssh/ is an empty dir in the profile
+# overlay and git doesn't track empty dirs, so on a fresh clone
+# the path may not exist yet.
 if [[ $KEYS_OUT != "" ]]; then
+    mkdir -p "$(dirname "$KEYS_OUT")"
     install -m 0600 "$PUBKEY_PATH" "$KEYS_OUT"
 fi
 

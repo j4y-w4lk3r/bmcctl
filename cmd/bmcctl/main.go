@@ -63,6 +63,16 @@ import (
 // production it stays as the 1Password backend.
 var store secrets.Backend = secrets.Default()
 
+// Version metadata stamped at link time by goreleaser via -ldflags.
+// Local `go build` leaves them at the "dev" defaults so a developer
+// running ./bmcctl from a source tree gets a clear "this is not a
+// release build" signal rather than a misleading version number.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -95,6 +105,9 @@ func main() {
 		err = cmdLs(args)
 	case "kvm":
 		err = cmdKVM(args)
+	case "-v", "--version", "version":
+		fmt.Printf("bmcctl %s (commit %s, built %s)\n", version, commit, date)
+		return
 	case "-h", "--help", "help":
 		usage()
 		return
@@ -124,6 +137,8 @@ USAGE
   bmcctl sensors <host|label>
   bmcctl ls
   bmcctl kvm    <host|label>
+  bmcctl -v / --version
+  bmcctl -h / --help
 
 Local registry:  ~/.config/bmcctl/hosts.json
 Secrets:         1Password via the 'op' CLI (must be installed and signed in)

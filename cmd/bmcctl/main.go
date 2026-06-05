@@ -1130,13 +1130,27 @@ func cmdInstallArch(args []string) error {
 	}
 	fmt.Printf("✓ %s: mounted %s into %s\n", entry.Host, *iso, chosen)
 
-	// Step 4: boot override -> Cd / Once.
+	// Give the BMC's NFS/HTTPS redirection a moment to actually
+	// reach RedirectionStatus="Redirection Started". On AMI, an
+	// immediate PowerCycle after InsertMedia can race the BIOS POST
+	// against the redirect-not-yet-running state and the BIOS falls
+	// through to the next boot entry on the disk.
+	time.Sleep(8 * time.Second)
+
+	// Step 4: boot override -> Cd / Continuous (UEFI mode is pinned
+	// inside SetBootOverride). Continuous (sticky) instead of Once
+	// because AMI's "Once" gets quietly cleared even when the firmware
+	// never actually booted from CD — leaves you wondering why the
+	// reinstall just rebooted into the existing on-disk system.
+	// We clear the override explicitly post-install in the cleanup
+	// step (see install-host.sh) so the host boots from disk on its
+	// next normal power-on.
 	bootCtx, cancel3 := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel3()
-	if err := c.SetBootOverride(bootCtx, bmc.BootTargetCD, bmc.BootEnabledOnce); err != nil {
+	if err := c.SetBootOverride(bootCtx, bmc.BootTargetCD, bmc.BootEnabledContinuous); err != nil {
 		return fmt.Errorf("SetBootOverride: %w", err)
 	}
-	fmt.Printf("✓ %s: boot override = Cd/Once\n", entry.Host)
+	fmt.Printf("✓ %s: boot override = Cd/Continuous (UEFI)\n", entry.Host)
 
 	// Step 5: choose the power action based on the initial state.
 	// "Off"  -> "On"          (cold start)

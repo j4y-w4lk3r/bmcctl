@@ -48,8 +48,9 @@ password_hash = ""
 [packages]
 # install.sh already pulls: base, linux, linux-firmware,
 # networkmanager, openssh, sudo, vim, git, curl, htop, intel-ucode.
-# These are the router-specific extras on top of that:
+# Everything below layers on top.
 extra = [
+    # --- routing / firewalling / network role ---
     "nftables",            # firewall (iptables replacement)
     "conntrack-tools",     # NAT / connection-tracking debugging
     "ethtool",             # NIC inspection (Mellanox + onboard)
@@ -59,10 +60,57 @@ extra = [
     "bind-tools",          # dig, nslookup, host
     "nmap",                # port scanning
     "tailscale",           # overlay VPN (paired with the future homelab-vpn)
-    "zsh",                 # shell preference
-    "tmux",                # for SOL/SSH session multiplexing
     "rsync",               # standard transfer tool
     "mosh",                # mobile shell — survives roaming
-    "tree",                # filesystem inspection
+    "iftop",               # per-interface live bandwidth
+    "nethogs",             # per-process bandwidth attribution
     "lsof",                # who-has-what-open debugging
+    "wireguard-tools",     # raw WG (in case we drop Tailscale later)
+    "dnsmasq",             # DNS / DHCP / TFTP for future PXE flows
+
+    # --- shells + multiplexers ---
+    "zsh",                 # primary interactive shell
+    "zsh-completions",     # extra completion definitions
+    "tmux",                # for SOL/SSH session multiplexing
+    "starship",            # cross-shell prompt
+    "fastfetch",           # system info on login (modern neofetch)
+
+    # --- modern CLI replacements ---
+    "yazi",                # TUI file manager (with image previews)
+    "eza",                 # ls replacement (icons, git-aware)
+    "bat",                 # cat replacement (syntax + git markers)
+    "fd",                  # find replacement
+    "ripgrep",             # grep replacement
+    "fzf",                 # fuzzy finder
+    "zoxide",              # smart cd (frecency-based)
+    "tree",                # directory tree view
+    "jq",                  # JSON wrangling (Redfish responses, etc.)
+
+    # --- editors ---
+    "neovim",              # modal editor (preferred over vim)
+    "helix",               # second modal editor — built-in LSP
+
+    # --- dev / git tooling ---
+    "github-cli",          # `gh` — pull requests, gists, releases
+    "git-delta",           # nicer diffs (configure as core.pager)
+    "lazygit",             # TUI git
+    "openssh",             # already pulled but pin (for ssh-keygen, sftp)
+
+    # --- monitoring / hardware ---
+    "btop",                # better htop (CPU/mem/net/disk all in one)
+    "iotop",               # per-process disk I/O
+    "lm_sensors",          # CPU/board temps
+    "smartmontools",       # SMART for the NVMe
+    "nvme-cli",            # NVMe-specific health/stats
+    "pciutils",            # lspci
+    "usbutils",            # lsusb
+
+    # --- quality of life ---
+    "man-db",              # so `man <thing>` actually works
+    "man-pages",           # POSIX/Linux man pages
+    "less",                # better pager (already pulled but pin)
+    "wget",                # alternative to curl for one-off fetches
+    "unzip",               # generic decompression
+    "zip",
+    "p7zip",
 ]

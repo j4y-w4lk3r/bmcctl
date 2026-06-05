@@ -1,0 +1,11 @@
+# Never commit secrets — keep templates only.
+config/rui/.env
+config/rclone/rclone.conf
+config/gh/hosts.yml
+
+# yazi plugin git checkouts (re-install via package.toml / ya pkg)
+config/yazi/flavors/**/.git/
+config/yazi/plugins/**/.git/
+
+# macOS junk
+.DS_Store

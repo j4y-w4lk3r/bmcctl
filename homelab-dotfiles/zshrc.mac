@@ -1,0 +1,712 @@
+export FUNCNEST=1000
+# Suppress login messages
+unset MAILCHECK  # Disable mail checking to prevent "You have new mail" message
+eval "$(zoxide init zsh)"
+#--------------------------------------------------------------------------------------------------------------------
+alias m="mullvad"
+alias h="htop"
+alias b="btop"
+alias tm="tmux"
+alias tl="tailscale"
+alias tls="tailscale status"
+alias n="ssh"
+alias br="brew"
+alias dul="diskutil"
+alias v="vim"
+alias ser="server"
+alias wt='networksetup -getairportpower en0 | grep -q "On" && networksetup -setairportpower en0 off || networksetup -setairportpower en0 on'
+alias g="git"
+alias gs='git status'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+alias gd='git diff'
+alias gco='git checkout'
+alias gb='git branch'
+alias ga='git add'
+alias e="exit"
+alias f="fastfetch"
+alias sp="speedtest"
+alias c="clear"
+alias xc='pbcopy'   # cmd | xc — copy stdout to clipboard (macOS)
+alias xp='pbpaste'  # xp alone prints clipboard; xp | … pipes it
+alias take='mkcd'     # mkdir + cd (same as mkcd)
+alias cat='bat'
+alias lg='lazygit'
+alias crs="source ~/.zshrc && clear && reset"
+alias sr='source ~/.zshrc && clear'
+#--------------------------------------------------------------------------------------------------------------------
+# eza aliases with icons
+alias ls='eza --icons=always'
+alias la='eza --icons=always -la'
+alias ll='eza --icons=always -lh'
+alias lt='eza --icons=always --tree'
+# Quick utility functions
+mkcd() { mkdir -p "$1" && cd "$1"; }
+port() { lsof -i :"$1"; }
+killport() { lsof -ti :"$1" | xargs kill -9; }
+# Core environment (editor, terminal capabilities, and config path marker)
+export CURRENT_ZSHRC="${0:A}"
+export TERM=xterm-256color
+export EDITOR="cursor"
+export VISUAL="cursor"
+
+# Prefer Cursor for opening local paths, keep macOS `open` for URLs/options.
+open() {
+  emulate -L zsh
+  setopt local_options no_shwordsplit
+
+  # No args: open current directory in Cursor.
+  if (( $# == 0 )); then
+    command cursor .
+    return $?
+  fi
+
+  local a
+  for a in "$@"; do
+    # If caller is using macOS open flags, delegate to the system `open`.
+    if [[ "$a" == -* ]]; then
+      command /usr/bin/open "$@"
+      return $?
+    fi
+    # URLs should use the system `open` (browser/mail handler/etc).
+    if [[ "$a" == *"://"* || "$a" == mailto:* ]]; then
+      command /usr/bin/open "$@"
+      return $?
+    fi
+  done
+
+  command cursor "$@"
+}
+# Colored man pages: `man rg`, `man fd`, … (roff → text → bat’s Manpage syntax)
+if command -v bat >/dev/null 2>&1; then
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+fi
+# Lazy-load nvm (faster shell startup)
+export NVM_DIR="$HOME/.nvm"
+nvm() { unset -f nvm node npm npx; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; nvm "$@"; }
+node() { unset -f nvm node npm npx; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; node "$@"; }
+npm() { unset -f nvm node npm npx; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; npm "$@"; }
+npx() { unset -f nvm node npm npx; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; npx "$@"; }
+# Tooling paths (Homebrew, language runtimes, databases)
+path_prepend() { [[ -d "$1" ]] && path=("$1" $path); }
+path_prepend "/opt/homebrew/bin"
+path_prepend "$HOME/.rbenv/bin"
+path_prepend "/opt/homebrew/opt/postgresql@15/bin"
+# Ruby (rbenv)
+eval "$(rbenv init -)"
+# Java
+export JAVA_HOME="/opt/homebrew/opt/openjdk@11"
+path_prepend "$JAVA_HOME/bin"
+# App CLIs
+alias keka="/Applications/Keka.app/Contents/MacOS/Keka --cli"
+#--------------------------------------------------------------------------------------------------------------------
+# Completion UI (needs compinit before zsh-autocomplete below)
+zstyle ':completion:*' menu select
+# zstyle ':autocomplete:*' sort-tries yes  # optional: rank zsh-autocomplete tries by use
+autoload -Uz compinit && compinit
+# zmv — batch rename with glob patterns, e.g.: zmv '(*).txt' '$1.bak'
+autoload -Uz zmv
+
+# zsh-bd — jump to a named parent dir or N levels up (bd Projects | bd 2)
+[[ -r "$HOME/.zsh/vendor/zsh-bd/bd.zsh" ]] && . "$HOME/.zsh/vendor/zsh-bd/bd.zsh"
+
+# History
+HISTFILE=~/.zsh_history
+HISTSIZE=50000
+SAVEHIST=50000
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_ALL_DUPS
+setopt HIST_FIND_NO_DUPS
+setopt HIST_SAVE_NO_DUPS
+setopt SHARE_HISTORY
+setopt INC_APPEND_HISTORY
+setopt AUTO_CD
+setopt CORRECT
+setopt EXTENDED_GLOB
+setopt NO_BEEP
+
+# Source zsh-autosuggestions
+source /opt/homebrew/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+# Source zsh-vi-mode
+source /opt/homebrew/share/zsh-vi-mode/zsh-vi-mode.plugin.zsh
+# edit-command-line: ZLE copies the buffer to a temp file, runs $EDITOR, reloads the line on save+quit.
+# Use nvim here only — EDITOR may be Cursor; Cursor often fails on /private/tmp/zsh….zsh “path does not exist”.
+#
+# Ctrl+Z → edit-command-line in nvim. This overrides zsh’s default ^Z (suspend-zsh / SIGTSTP); use fg/bg for
+# jobs you started from the shell. Raw terminals send ^Z (ASCII 26); Kitty-style CSI-u often sends \e[122;5u
+# (122 = “z”, modifier 5 = Ctrl). zsh-vi-mode maps ^X^e and Option+e to edit-command-line too — we clear those
+# so only Ctrl+Z opens the editor (they become undefined-key / no-op).
+autoload -Uz edit-command-line
+zle -N orig-edit-command-line edit-command-line
+_edit_command_line_nvim() {
+  EDITOR=nvim VISUAL=nvim zle orig-edit-command-line
+}
+zle -N edit-command-line _edit_command_line_nvim
+for _kmap in emacs viins vicmd; do
+  bindkey -M "$_kmap" '^Z' edit-command-line           # Ctrl+Z (standard TTY)
+  bindkey -M "$_kmap" $'\e[122;5u' edit-command-line  # Ctrl+Z (CSI u — Kitty / some modern terminals)
+  bindkey -M "$_kmap" '^X^e' undefined-key            # was edit-command-line (zsh-vi-mode); only ^Z now
+  bindkey -M "$_kmap" '^[e' undefined-key            # Option+e / Esc e — same
+done
+unset _kmap
+# Source zsh-autocomplete (must be last)
+source /opt/homebrew/share/zsh-autocomplete/zsh-autocomplete.plugin.zsh
+
+[ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+source "$HOME/.config/fzf/zsh-keybindings.zsh"
+
+# forgit — fzf-powered git helpers (glo, gcb, gbd, ga, …); requires: brew install forgit fzf
+for _forgit in \
+  /opt/homebrew/share/forgit/forgit.plugin.zsh \
+  /opt/homebrew/opt/forgit/share/forgit/forgit.plugin.zsh; do
+  [[ -r "$_forgit" ]] && { source "$_forgit"; break; }
+done
+unset _forgit
+
+# fzf's zsh integration binds Tab to fzf-completion; restore Tab for completion and
+# move fzf path completion to Ctrl+X Ctrl+I (emacs / vi insert).
+if [[ -n "${widgets[fzf-completion]}" ]]; then
+  bindkey -M emacs '^X^I' fzf-completion
+  bindkey -M viins '^X^I' fzf-completion
+fi
+# Tab: accept grey zsh-autosuggestions when present; otherwise normal completion.
+# Grey “ghost” text = zsh-autosuggestions (from history), NOT Navi. Tab completion menu = zsh _git / compsys, NOT Navi.
+# (Default autosuggest accept keys are still End / → — see ZSH_AUTOSUGGEST_ACCEPT_WIDGETS.)
+_tab_autosuggest_or_complete() {
+  if (( $#POSTDISPLAY )); then
+    zle autosuggest-accept
+  else
+    zle expand-or-complete
+  fi
+}
+zle -N _tab_autosuggest_or_complete
+bindkey -M emacs '^I' _tab_autosuggest_or_complete
+bindkey -M viins '^I' _tab_autosuggest_or_complete
+# In the completion menu, Tab / Shift+Tab move selection (normal zsh menu behavior).
+bindkey -M menuselect '^[[Z' reverse-menu-complete
+
+# Word deletion shortcuts
+# Ctrl+W already does backward-kill-word in most keymaps; map Option+Delete too.
+# Common sequences for Option+Delete (terminal-dependent): ESC + Backspace / ESC + DEL.
+bindkey -M emacs '^[^?' backward-kill-word   # Option+Delete in many terminals
+bindkey -M viins '^[^?' backward-kill-word
+bindkey -M emacs '^[\b' backward-kill-word   # alternate
+bindkey -M viins '^[\b' backward-kill-word
+bindkey -M emacs '^[\x7f' backward-kill-word # alternate
+bindkey -M viins '^[\x7f' backward-kill-word
+
+source /opt/homebrew/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+function y() {
+	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	yazi "$@" --cwd-file="$tmp"
+	if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+		builtin cd -- "$cwd"
+	fi
+	rm -f -- "$tmp"
+}
+#--------------------------------------------------------------------------------------------------------------------
+# Command and output logger
+cmdlog() {
+  # Create a timestamp-based filename
+  local logfile="$HOME/terminal_logs/$(date +%Y%m%d_%H%M%S)_cmdlog.txt"
+  # Make sure the directory exists
+  mkdir -p "$HOME/terminal_logs"
+  # Save the command to the file
+  echo "COMMAND: $*" > "$logfile"
+  echo "TIMESTAMP: $(date)" >> "$logfile"
+  echo "DIRECTORY: $PWD" >> "$logfile"
+  echo "OUTPUT:" >> "$logfile"
+  echo "----------------------------------------" >> "$logfile"
+  # Run the command and capture output
+  eval "$@" 2>&1 | tee -a "$logfile"
+  echo "----------------------------------------" >> "$logfile"
+  echo "Command and output saved to $logfile"
+}
+# Warp-like command history viewer
+cmdhist() {
+  local dir="$HOME/terminal_logs"
+  mkdir -p "$dir"
+  if [ -z "$(ls -A "$dir")" ]; then
+    echo "No command logs found in $dir"
+    return 1
+  fi
+  
+  # List available logs and let user choose one
+  local choice=$(ls -t "$dir" | fzf --preview "cat $dir/{}")
+  if [ -n "$choice" ]; then
+    less "$dir/$choice"
+  fi
+}
+# Function to capture the last command's output
+lastcmd() {
+  local tempfile=$(mktemp)
+  fc -ln -1 | sed 's/^\s*//' > $tempfile
+  echo "COMMAND: $(cat $tempfile)" > ~/last_command.txt
+  echo "TIMESTAMP: $(date)" >> ~/last_command.txt
+  echo "DIRECTORY: $PWD" >> ~/last_command.txt
+  echo "OUTPUT:" >> ~/last_command.txt
+  echo "----------------------------------------" >> ~/last_command.txt
+  eval "$(cat $tempfile)" 2>&1 | tee -a ~/last_command.txt
+  echo "----------------------------------------" >> ~/last_command.txt
+  echo "Last command and output saved to ~/last_command.txt"
+  rm $tempfile
+}
+
+# Silent capture: re-run last command, save output to ~/last_command.txt, print nothing.
+lastcmd_silent() {
+  local cmd
+  cmd="$(fc -ln -1 | sed 's/^\\s*//')"
+  [[ -n "$cmd" ]] || return 1
+
+  {
+    echo "COMMAND: $cmd"
+    echo "TIMESTAMP: $(date)"
+    echo "DIRECTORY: $PWD"
+    echo "OUTPUT:"
+    echo "----------------------------------------"
+  } > "$HOME/last_command.txt"
+
+  ( eval "$cmd" ) >> "$HOME/last_command.txt" 2>&1
+  echo "----------------------------------------" >> "$HOME/last_command.txt"
+}
+
+# Copy the most recently captured log (created by `lastcmd`)
+lastcmd_copy() {
+  [[ -f "$HOME/last_command.txt" ]] || { echo "No log yet. Run: lastcmd"; return 1; }
+  pbcopy < "$HOME/last_command.txt"
+  echo "Copied: ~/last_command.txt"
+}
+
+# Starship presets live in ~/.config/starship/ (toggle detailed ↔ zen with Ctrl+G).
+# If STARSHIP_CONFIG is exported but the file is missing (e.g. legacy
+# ~/.config/starship.detailed.toml), Starship ignores it and uses built-in defaults
+# (gcloud and other modules reappear). Rewrite known bad paths, then default when empty/missing.
+case "${STARSHIP_CONFIG:-}" in
+  "$HOME/.config/starship.detailed.toml"|"")
+    export STARSHIP_CONFIG="$HOME/.config/starship/starship.detailed.toml" ;;
+esac
+[[ -f "${STARSHIP_CONFIG:-}" ]] || export STARSHIP_CONFIG="$HOME/.config/starship/starship.detailed.toml"
+
+# Initialize Starship prompt
+eval "$(starship init zsh)"
+
+# Print a separator only after a command runs (not on fresh shell start).
+# Uses hooks so we don't override other preexec/precmd logic.
+autoload -Uz add-zsh-hook
+typeset -g __prompt_sep_after_cmd=0
+__prompt_sep_mark() {
+  # Don't treat ZLE widgets (keybindings) as "commands" for separator purposes.
+  [[ -n "${ZLE-}" ]] && return 0
+  # Don't treat prompt-rendering invocations as user commands (avoids separator spam).
+  case "$1" in
+    starship\ prompt*|command\ starship\ prompt*|*'starship prompt'*)
+      return 0
+      ;;
+  esac
+  __prompt_sep_after_cmd=1
+}
+__prompt_sep_draw() {
+  # Avoid printing separators during prompt redraws.
+  [[ -n "${ZLE-}" ]] && return 0
+  if (( __prompt_sep_after_cmd )); then
+    local -r cols=${COLUMNS:-80}
+    local -r _empty=""
+    # Dim gray separator (adjust 240-250 to taste)
+    local -r line="${(l:${cols}::─:)_empty}"
+    print -P -- "%F{244}${line}%f"
+    __prompt_sep_after_cmd=0
+  fi
+}
+# De-duplicate hooks when re-sourcing ~/.zshrc (remove ALL duplicates)
+while (( ${preexec_functions[(Ie)__prompt_sep_mark]} )); do
+  add-zsh-hook -d preexec __prompt_sep_mark 2>/dev/null || break
+done
+while (( ${precmd_functions[(Ie)__prompt_sep_draw]} )); do
+  add-zsh-hook -d precmd __prompt_sep_draw 2>/dev/null || break
+done
+add-zsh-hook preexec __prompt_sep_mark
+add-zsh-hook precmd  __prompt_sep_draw
+
+# Capture last command string (output capture needs explicit logging)
+typeset -g __last_cmd_str=""
+__remember_last_cmd() { __last_cmd_str="$1" }
+while (( ${preexec_functions[(Ie)__remember_last_cmd]} )); do
+  add-zsh-hook -d preexec __remember_last_cmd 2>/dev/null || break
+done
+add-zsh-hook preexec __remember_last_cmd
+
+# Toggle Starship prompt between detailed and zen modes (Ctrl+G).
+# Uses STARSHIP_CONFIG so switching is instant and per-shell-session.
+toggle_starship_prompt() {
+  local detailed="$HOME/.config/starship/starship.detailed.toml"
+  local zen="$HOME/.config/starship/starship.zen.toml"
+
+  if [[ "${STARSHIP_CONFIG:-$detailed}" == "$zen" ]]; then
+    export STARSHIP_CONFIG="$detailed"
+  else
+    export STARSHIP_CONFIG="$zen"
+  fi
+
+  zle reset-prompt
+}
+zle -N toggle_starship_prompt
+bindkey -M emacs '^G' toggle_starship_prompt
+bindkey -M viins '^G' toggle_starship_prompt
+
+# Copy last captured command+output to clipboard (Ctrl+X then Ctrl+Y / Ctrl+X)
+lastcmd_copy_widget() {
+  # Keep this widget fully silent: no terminal output, no status message.
+  __prompt_sep_after_cmd=0
+  # Refresh the capture first, then copy.
+  lastcmd_silent 2>/dev/null || true
+  [[ -f "$HOME/last_command.txt" ]] && pbcopy < "$HOME/last_command.txt"
+  __prompt_sep_after_cmd=0
+  return 0
+}
+zle -N lastcmd_copy_widget
+bindkey -M emacs '^X^Y' lastcmd_copy_widget
+bindkey -M viins '^X^Y' lastcmd_copy_widget
+
+# Single-keystroke binding (Ctrl+X). Note: in emacs keymap, ^X is traditionally a prefix.
+bindkey -M viins '^X' lastcmd_copy_widget
+
+#--------------------------------------------------------------------------------------------------------------------
+# Search, docs, and snippets
+# Text search → rg; files by name → fd (both respect .gitignore). Ripgrep config: ~/.config/ripgrep/config
+export RIPGREP_CONFIG_PATH="${RIPGREP_CONFIG_PATH:-$HOME/.config/ripgrep/config}"
+# tldr examples (from Homebrew `tlrc`, still invoked as `tldr`; `tl` is tailscale)
+alias td='tldr'
+alias cheats='cheat -l'
+chs() { cheat -c -s "$1"; }
+# Navi: Ctrl+] (Control + closing square bracket). Avoid Ctrl+M (= Enter) and Ctrl+G (Starship toggle).
+# Also bind in menuselect so Navi still works while the Tab-completion *menu* is open (grey list of --flags).
+if command -v navi >/dev/null 2>&1; then
+  eval "$(navi widget zsh)"
+  bindkey -M emacs '^]' _navi_widget
+  bindkey -M viins '^]' _navi_widget
+  bindkey -M vicmd '^]' _navi_widget
+  bindkey -M menuselect '^]' _navi_widget
+  bindkey -M emacs '^G' toggle_starship_prompt
+  bindkey -M viins '^G' toggle_starship_prompt
+fi
+
+# Display ASCII art on shell startup
+#cat "$HOME/px/h.txt"
+# Cron Manager alias
+alias cron-manager='python3 ~/px/m/scripts/cron_manager.py'
+# alias yu0="cd ~/px/y/cli_x_web/dist/db && ./launch_yu0.sh"
+export PATH="$HOME/bin:$PATH"
+#--------------------------------------------------------------------------------------------------------------------
+# pi() removed 2026-05-13 — was hardcoded to a stale dev binary at
+# ~/px/pikvm/pikvm and shadowed the brew-installed `pikvm`. Just run
+# `pikvm` (which resolves to /opt/homebrew/bin/pikvm).
+# k() {
+#     (clear && cd $HOME/px/y/cli_x_web/dist/db && ./launch_yu0.sh)
+# }
+# kb() {
+#   nohup bash -c "cd $HOME/px/y/cli_x_web/dist/db && ./launch_yu0.sh" >> ~/px/m/scripts/D/logs/yu0_launch.log 2>&1 &
+#   echo "Yu0 launched in background"
+#   echo "Yu0 PID: $!"
+# }
+pxcr() {
+    source $HOME/pxc/.zshrc_pxc
+    cd $HOME/Documents/Doc/Dev/Projects/X/PXC/PXC1/Go && go run pxc_r/pxc_r.go
+    wait
+    cd $HOME
+}
+pxcc() {
+    source $HOME/pxc/.zshrc_pxc
+    cd $HOME/Documents/Doc/Dev/Projects/X/PXC/PXC1/Go && go run pxc_c/pxc_c.go
+    wait
+    cd $HOME
+}
+# jay — tmux session launcher (moved to ~/.config/zsh/jay.zsh)
+
+# hs — “headscale-style” SSH picker: fzf over `tailscale status` peers, then ssh. Works with Tailscale SaaS or
+# Headscale (same `tailscale` CLI; only the login server URL changes). Default SSH user: TS_SSH_USER, else $USER.
+#   export TS_SSH_USER=j4y
+#   hs                # fzf → ssh TS_SSH_USER@<100.x>
+#   hs root           # fzf → ssh root@<100.x>
+#   hs -o ForwardAgent=yes   # extra args forwarded to ssh(1)
+hs() {
+  command -v fzf >/dev/null || { echo >&2 "hs: install fzf (brew install fzf)"; return 1; }
+  command -v tailscale >/dev/null || { echo >&2 "hs: tailscale CLI not found"; return 1; }
+
+  local ssh_user="${TS_SSH_USER:-$USER}"
+  if [[ -n $1 && $1 != -* ]]; then
+    ssh_user=$1
+    shift
+  fi
+
+  local line ip
+  line=$(
+    if command -v jq >/dev/null 2>&1; then
+      command tailscale status --json 2>/dev/null | jq -r '
+        [
+          (if .Self then .Self else empty end),
+          ((.Peer // {}) | to_entries[] | .value)
+        ][]
+        | select((.TailscaleIPs // []) | length > 0)
+        | [
+            (if .Online then 0 else 1 end),
+            .TailscaleIPs[0],
+            (.HostName // ((.DNSName // "") | sub("\\..*"; "")) | if . == "" then "?" else . end),
+            (.OS // "?"),
+            (if .Online then "online" else "offline" end)
+          ] | @tsv
+        ' | LC_ALL=C sort -n -t$'\t' -k1,1 | cut -f2-
+    else
+      command tailscale status 2>/dev/null | awk '
+        $1 ~ /^100\./ && NF >= 4 {
+          ip = $1; host = $2; os = $4
+          status = $5; for (i = 6; i <= NF; i++) status = status " " $i
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", status)
+          print ip "\t" host "\t" os "\t" status
+        }'
+    fi | fzf --height=45% --reverse \
+      --delimiter=$'\t' \
+      --with-nth=1,2,3,4 \
+      --header=$'Enter=ssh (TS_SSH_USER or first arg)\nCtrl-C=cancel' \
+      --preview='printf "IP:\t%s\nHost:\t%s\nOS:\t%s\nState:\t%s\n" {1} {2} {3} {4}'
+  ) || return 0
+  [[ -n "$line" ]] || return 0
+
+  ip="${line%%$'\t'*}"
+  command ssh "$@" "${ssh_user}@${ip}"
+}
+
+srall() {
+  local entry pane cmd count=0
+  for entry in $(tmux list-panes -a -F '#{pane_id}:#{pane_current_command}'); do
+    pane="${entry%%:*}"
+    cmd="${entry#*:}"
+    case "$cmd" in
+      zsh|bash|sh|fish)
+        tmux send-keys -t "$pane" 'sr' Enter
+        ((count++))
+        ;;
+    esac
+  done
+  echo "reloaded $count shell pane(s)"
+}
+# ggc / ggs / gga — GitHub helpers (moved to ~/.config/zsh/github.zsh)
+# (gcl was renamed to ggc on 2026-05-20)
+ff() {
+  local out key file
+  out=$(fzf --expect=ctrl-o \
+            --preview 'bat --color=always {} 2>/dev/null || cat {}' \
+            --bind 'ctrl-y:execute-silent(echo -n "$PWD/{}" | pbcopy)+abort' \
+            --header 'enter=cursor | ctrl-o=nvim | ctrl-y=copy path')
+  key=$(head -1 <<< "$out")
+  file=$(sed -n '2p' <<< "$out")
+  [ -z "$file" ] && return
+  if [ "$key" = "ctrl-o" ]; then
+    nvim "$file"
+  else
+    cursor "$file"
+  fi
+}
+
+# ic — moved to ~/.config/zsh/imgconv.zsh
+
+# _ggc_complete + compdef — moved to ~/.config/zsh/github.zsh
+
+# bb — moved to ~/.config/zsh/backblaze.zsh (with subcommands)
+
+# Universal archive extractor
+extract() {
+  [ ! -f "$1" ] && { echo "'$1' is not a file"; return 1; }
+  case "$1" in
+    *.tar.bz2) tar xjf "$1" ;;
+    *.tar.gz)  tar xzf "$1" ;;
+    *.tar.xz)  tar xJf "$1" ;;
+    *.bz2)     bunzip2 "$1" ;;
+    *.gz)      gunzip "$1" ;;
+    *.tar)     tar xf "$1" ;;
+    *.tbz2)    tar xjf "$1" ;;
+    *.tgz)     tar xzf "$1" ;;
+    *.zip)     unzip "$1" ;;
+    *.7z)      7z x "$1" ;;
+    *.rar)     unrar x "$1" ;;
+    *)         echo "'$1': unknown format" ;;
+  esac
+}
+# brs — moved to ~/.config/zsh/brew.zsh
+
+# direnv
+eval "$(direnv hook zsh)"
+
+# zsh-you-should-use
+source /opt/homebrew/share/zsh-you-should-use/you-should-use.plugin.zsh
+
+# Cheatsheet — dynamically reads zshrc and shows all aliases, functions & options
+zhelp() {
+  local rc=~/.zshrc
+  {
+    echo "# Zshrc Cheatsheet"
+    echo ""
+    echo "## Aliases"
+    grep -E "^alias " "$rc" | grep -v "^#" | sed 's/^alias //' | while IFS='=' read -r name val; do
+      val="${val#\"}"; val="${val%\"}"
+      val="${val#\'}"  ; val="${val%\'}"
+      printf "  %-14s  %s\n" "$name" "$val"
+    done
+    echo ""
+    echo "## Functions"
+    grep -E '^[a-zA-Z_][a-zA-Z0-9_-]*\(\)' "$rc" | grep -v '^#' | while read -r line; do
+      fname="${line%%\(*}"
+      # grab the comment on the line above the function
+      desc=$(grep -B1 "^${fname}()" "$rc" | head -1 | grep '^#' | sed 's/^# *//')
+      printf "  %-14s  %s\n" "$fname" "${desc:-—}"
+    done
+    echo ""
+    echo "## Zsh Options (setopt)"
+    grep -E '^setopt ' "$rc" | grep -v '^#' | while read -r _ opt; do
+      printf "  %s\n" "$opt"
+    done
+    echo ""
+    echo "## Keybindings (fzf / tools)"
+    echo "  Ctrl-t    Paste file path into command"
+    echo "  Ctrl-r    Fuzzy search command history"
+    echo "  Alt-c     cd into a directory"
+    echo "  Ctrl-y    Copy path (in ff)"
+    echo "  Ctrl-o    Open in nvim (in ff)"
+    echo "  Ctrl-g    Starship detailed ↔ zen"
+    echo "  Ctrl-]    Navi snippet picker (also when Tab menu is open)"
+    echo "## Quick commands"
+    echo "  td <cmd>   tldr examples (same as tldr)"
+    echo "  cheats     list cheat sheets | chs <term>  search in sheets"
+    echo "  man rg     colored man pages (MANPAGER + bat)"
+    echo "  rg / fd    search text / files by name"
+    echo "  cmd | xc     copy stdout to clipboard; xp → pbpaste (xp | …)"
+    echo "  take DIR     mkdir + cd (same as mkcd)"
+    echo "  hs [user]    fzf Tailscale/Headscale peers → ssh (TS_SSH_USER, optional jq for JSON)"
+    echo "  zmv          batch rename (see comment near compinit)"
+    echo "  Ctrl+Z  edit current line in nvim (^Z was suspend; see zshrc comment)"
+    echo "  atuin_profile default | nas-<stack>   switch Atuin DB + server (exec zsh)"
+    echo "  atuin_which    show active profile + atuin paths"
+    echo "  atu1n          fzf picker;  atu1n -c --stack … --port …  create profile + Vault + op"
+  } | bat --language=md --style=plain --paging=always
+}
+
+# Atuin — encrypted/syncable history (run once: `atuin import auto`)
+# Profiles: any dir ~/.config/atuin/profiles/nas-*/ with config.toml; active file ~/.config/atuin/active-profile
+# See ~/.config/atuin/profiles/README.md and scripts/atuin-profile-create.sh
+if [[ -f "$HOME/.config/atuin/active-profile" ]]; then
+  IFS= read -r _atuin_pf < "$HOME/.config/atuin/active-profile" || _atuin_pf=""
+  case "$_atuin_pf" in
+    default|main|"") unset ATUIN_CONFIG_DIR ;;
+    nas-personal) export ATUIN_CONFIG_DIR="$HOME/.config/atuin/profiles/nas-j4y" ;; # legacy (before nas-*)
+    nas-work) export ATUIN_CONFIG_DIR="$HOME/.config/atuin/profiles/nas-k4i" ;;
+    nas-*)
+      if [[ -d "$HOME/.config/atuin/profiles/$_atuin_pf" && -f "$HOME/.config/atuin/profiles/$_atuin_pf/config.toml" ]]; then
+        export ATUIN_CONFIG_DIR="$HOME/.config/atuin/profiles/$_atuin_pf"
+      else
+        unset ATUIN_CONFIG_DIR
+      fi
+      ;;
+    *) unset ATUIN_CONFIG_DIR ;;
+  esac
+  unset _atuin_pf
+fi
+atuin_profile() {
+  emulate -L zsh
+  local t="${1:-}"
+  case "$t" in
+    default|main)
+      print -r default >"$HOME/.config/atuin/active-profile"
+      ;;
+    "")
+      print -u2 "usage: atuin_profile default | nas-<stack>  (see ~/.config/atuin/profiles/nas-*/)" >&2
+      return 2
+      ;;
+    nas-personal) print -r nas-j4y >"$HOME/.config/atuin/active-profile" ;;
+    nas-work) print -r nas-k4i >"$HOME/.config/atuin/active-profile" ;;
+    nas-*)
+      if [[ ! -d "$HOME/.config/atuin/profiles/$t" ]]; then
+        print -u2 "atuin_profile: missing $HOME/.config/atuin/profiles/$t (use atu1n -c to create)" >&2
+        return 2
+      fi
+      print -r "$t" >"$HOME/.config/atuin/active-profile"
+      ;;
+    *)
+      print -u2 "atuin_profile: unknown '$t' (use default or nas-* with existing profile dir)" >&2
+      return 2
+      ;;
+  esac
+  print -r "Atuin profile → $(<$HOME/.config/atuin/active-profile). Restarting shell…"
+  exec zsh
+}
+atuin_which() {
+  emulate -L zsh
+  local ap="default"
+  [[ -f "$HOME/.config/atuin/active-profile" ]] && IFS= read -r ap <"$HOME/.config/atuin/active-profile"
+  print -r "active-profile (file):  ${ap}"
+  print -r "ATUIN_CONFIG_DIR:         ${ATUIN_CONFIG_DIR:-<unset → default ~/.config/atuin>}"
+  local cf="${ATUIN_CONFIG_DIR:-$HOME/.config/atuin}/config.toml"
+  if [[ -f "$cf" ]]; then
+    print -r "config file:              $cf"
+    command rg '^sync_address' "$cf" 2>/dev/null || grep '^sync_address' "$cf"
+  fi
+  command -v atuin >/dev/null && command atuin info 2>/dev/null | command rg -e 'client config:|client db path:|key path:|session_path|meta db|ATUIN_CONFIG' || command atuin info 2>/dev/null | command head -14
+}
+atu1n() {
+  emulate -L zsh
+  if [[ "${1:-}" == (-c|--create) ]]; then
+    shift
+    command "$HOME/.config/atuin/scripts/atuin-profile-create.sh" "$@"
+    return
+  fi
+  command -v fzf >/dev/null || { print -u2 "atu1n: install fzf (brew install fzf)"; return 1; }
+  local -a profs
+  local d
+  profs=(default)
+  for d in "$HOME"/.config/atuin/profiles/nas-*(N/); do
+    [[ -f "$d/config.toml" ]] && profs+=("${d:t}")
+  done
+  local choice
+  choice=$(printf '%s\n' "${profs[@]}" | fzf --height=40% --reverse --prompt='atuin profile> ' --header=$'Enter=switch (restarts shell)\nCtrl-C=cancel')
+  [[ -n "$choice" ]] || return 0
+  atuin_profile "$choice"
+}
+if command -v atuin >/dev/null; then
+  eval "$(atuin init zsh)"
+  # Prefer Atuin search on Ctrl+U (Ctrl+A is start-of-line; keep it).
+  bindkey -M emacs '^U' atuin-search
+  bindkey -M viins '^U' atuin-search-viins
+
+  # Keep Ctrl+R for non-Atuin history search (fzf if available).
+  if [[ -n "${widgets[fzf-history-widget]}" ]]; then
+    bindkey -M emacs '^R' fzf-history-widget
+    bindkey -M viins '^R' fzf-history-widget
+  else
+    bindkey -M emacs '^R' history-incremental-search-backward
+    bindkey -M viins '^R' history-incremental-search-backward
+  fi
+fi
+
+# Vault CLI (NAS over Tailscale). Placed at end so anything above can override if needed.
+export VAULT_ADDR=http://100.92.253.124:8200
+#--------------------------------------------------------------------------------------------------------------------
+
+# git/gh account switcher (gswitch / gwhoami / gsw)
+[ -f "$HOME/.config/zsh/git-account.zsh" ] && source "$HOME/.config/zsh/git-account.zsh"
+
+# YubiKey manager (yk)
+#[ -f ~/.config/zsh/yubikey.zsh ] && source ~/.config/zsh/yubikey.zsh
+
+# jay — tmux session launcher (jay)
+[ -f ~/.config/zsh/jay.zsh ] && source ~/.config/zsh/jay.zsh
+
+# GitHub helpers (ggc / ggs / gga)
+[ -f ~/.config/zsh/github.zsh ] && source ~/.config/zsh/github.zsh
+
+# Image converter (ic)
+[ -f ~/.config/zsh/imgconv.zsh ] && source ~/.config/zsh/imgconv.zsh
+
+# Backblaze B2 backup helpers (bb push/pull/ls/size/check/sync/open)
+[ -f ~/.config/zsh/backblaze.zsh ] && source ~/.config/zsh/backblaze.zsh
+
+# Brew sync (brs)
+[ -f ~/.config/zsh/brew.zsh ] && source ~/.config/zsh/brew.zsh

@@ -1,0 +1,31 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+# Zen Starship prompt: show only directory + prompt marker
+command_timeout = 2000
+add_newline = false
+
+format = """
+$directory\
+$line_break\
+$character
+"""
+
+[character]
+success_symbol = "[●](bold green)"
+error_symbol = "[✗](bold red)"
+
+[directory]
+truncation_length = 5
+truncate_to_repo = true
+style = "bold cyan"
+
+[gcloud]
+disabled = true
+
+# Make sure git modules stay hidden even inside repos
+[git_branch]
+disabled = true
+[git_status]
+disabled = true
+[custom.git_upstream]
+disabled = true

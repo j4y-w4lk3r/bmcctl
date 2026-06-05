@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "ports": {
+    "1.2": {
+      "name": "router",
+      "bios_key": "Delete",
+      "tags": [
+        "router",
+        "w680",
+        "asrock"
+      ],
+      "notes": "ASRock W680D4U-2L2T/G5 + i5-13500 + Mellanox CX-4 Lx 2x25G + Samsung 990 Pro 2TB"
+    },
+    "1.3": {
+      "name": "nas",
+      "bios_key": "Delete",
+      "tags": [
+        "nas",
+        "storage"
+      ],
+      "notes": "NAS (build TBD)"
+    }
+  }
+}

@@ -16,7 +16,7 @@
 #     bmcctl install-arch router --iso https://<b2-url>/...
 
 [host]
-hostname = "router"
+hostname = "ru0"
 
 # Samsung 990 Pro 2TB NVMe is the only block device on this board.
 # Mellanox card has no storage; SATA is unpopulated.
@@ -30,6 +30,11 @@ wipe_disk = "yes"
 timezone = "Europe/Warsaw"
 locale   = "en_US.UTF-8"
 keymap   = "us"
+
+[dotfiles]
+# On first boot after install: git clone bmcctl + apply homelab-dotfiles.
+bootstrap = true
+repo = "https://github.com/j4y-w4lk3r/bmcctl.git"
 
 [user]
 name = "j4y"

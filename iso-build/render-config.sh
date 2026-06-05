@@ -76,6 +76,10 @@ USERNAME=$(read_toml '.user.name')
 PUBKEY_FILE=$(read_toml '.user.ssh_pubkey_file')
 PASSWORD_HASH=$(read_toml '.user.password_hash')
 EXTRA_PACKAGES=$(read_toml '.packages.extra')
+DOTFILES_BOOTSTRAP=$(read_toml '.dotfiles.bootstrap')
+DOTFILES_REPO=$(read_toml '.dotfiles.repo')
+DOTFILES_BOOTSTRAP=${DOTFILES_BOOTSTRAP:-false}
+DOTFILES_REPO=${DOTFILES_REPO:-https://github.com/j4y-w4lk3r/bmcctl.git}
 
 # Sensible defaults for omitted optional fields.
 LOCALE=${LOCALE:-en_US.UTF-8}
@@ -154,6 +158,8 @@ USERNAME='$USERNAME'
 USER_PUBKEY='$USER_PUBKEY'
 USER_PASSWORD_HASH='$PASSWORD_HASH'
 POST_INSTALL_PACKAGES='$EXTRA_PACKAGES'
+DOTFILES_BOOTSTRAP='$DOTFILES_BOOTSTRAP'
+DOTFILES_REPO='$DOTFILES_REPO'
 ENV
 chmod 0644 "$OUT"
 

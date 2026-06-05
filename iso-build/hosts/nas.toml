@@ -36,6 +36,10 @@ timezone = "Europe/Warsaw"
 locale   = "en_US.UTF-8"
 keymap   = "us"
 
+[dotfiles]
+bootstrap = true
+repo = "https://github.com/j4y-w4lk3r/bmcctl.git"
+
 [user]
 name = "j4y"
 

@@ -13,16 +13,15 @@ set -euo pipefail
 
 DOTFILES_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAC_HOME="${MAC_HOME:-$HOME}"
-# GitHub-first: read from homelab-dotfiles/config/ when vendored.
-# Falls back to Mac ~/.config only if config/ is empty (pre-vendor).
-CONFIG_SRC="$DOTFILES_DIR/config"
-if [[ ! -d "$CONFIG_SRC/btop" && ! -d "$CONFIG_SRC/yazi" ]]; then
-  echo "note: config/ not vendored yet — reading from Mac ~/.config"
-  echo "      run ./vendor-from-mac.sh && git push to survive a Mac reset"
-  CONFIG_SRC="$MAC_HOME/.config"
+# shellcheck source=lib/config-src.sh
+source "$DOTFILES_DIR/lib/config-src.sh"
+CONFIG_SRC="$(resolve_config_src "$DOTFILES_DIR" "$MAC_HOME")"
+if [[ "$CONFIG_SRC" == "$MAC_HOME/.config" ]]; then
+  echo "note: config/ not vendored — reading from Mac ~/.config"
   CONFIG_SRC_IS_MAC=1
 else
   CONFIG_SRC_IS_MAC=0
+  echo "note: config source = $CONFIG_SRC (from git)"
 fi
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new)
@@ -36,7 +35,7 @@ declare -A HOSTS=(
 
 rsync_to() {
   local dest_user_host="$1" src="$2" remote_path="$3"
-  local -a opts=(-az --delete-excluded --exclude '.git' --exclude '.DS_Store')
+  local -a opts=(-az --info=progress2 --delete-excluded --exclude '.git' --exclude '.DS_Store')
   [[ -d "$src" || -f "$src" ]] || { echo "  skip (missing locally): $src"; return 0; }
   if [[ "$DRY_RUN" == "1" ]]; then
     echo "  rsync $src → ${dest_user_host}:${remote_path}"

@@ -31,8 +31,27 @@ cd bmcctl/homelab-dotfiles
 |---------|---------|
 | `./vendor-from-mac.sh` | Snapshot Mac → `config/` (run before commit) |
 | `./restore-to-mac.sh` | After Mac reset: `config/` → `~/.config` |
-| `./sync.sh router nas` | Deploy to servers (packages + configs) |
+| `./sync.sh router nas` | Deploy from this machine via SSH+rsync |
 | `SKIP_DEPS=1 ./sync.sh router` | Configs only, no pacman |
+| `./bootstrap-remote.sh router nas` | **No Mac** — SSH in, git clone, apply on box |
+| `./apply-local.sh` | Run **on** router/nas after `git clone ~/bmcctl` |
+
+### After a fresh ISO install (no Mac needed)
+
+From **Arch workstation** (or any SSH client):
+
+```bash
+git clone https://github.com/j4y-w4lk3r/bmcctl.git ~/bmcctl
+cd ~/bmcctl/homelab-dotfiles
+./bootstrap-remote.sh router nas
+```
+
+Or on the **router itself** once it has network + git:
+
+```bash
+git clone https://github.com/j4y-w4lk3r/bmcctl.git ~/bmcctl
+~/bmcctl/homelab-dotfiles/apply-local.sh
+```
 
 ## What never goes in git
 

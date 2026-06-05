@@ -1,0 +1,151 @@
+# Per-host configuration for the bmcctl Arch installer ISO.
+#
+# Target hardware: Custom NAS
+#   - ASRock W680D4U-2L2T/G5  (Aspeed AST2600 BMC, AMI MegaRAC, IPMI/Redfish)
+#   - Intel Core i7-14700      (28 threads — 8P + 12E, Raptor Lake Refresh)
+#   - 32 GB DDR5 (2x16GB Crucial 4800, will likely grow to 128 GB)
+#   - fanxiang 4TB NVMe SSD (M.2 PCIe 4.0 x4, 7300 MB/s read, 2800 TBW)
+#       -> /dev/nvme0n1
+#   - 2x 1G + 2x 10G onboard + Mellanox ConnectX-4 Lx 2x25G SFP28
+#   - SATA bays unpopulated for now (planned spinning rust later)
+#
+# Smoke-test command (Arch box, ~2 min, no real hardware touched):
+#     make iso HOST=nas && make test HOST=nas
+#
+# Production install via the one-shot wrapper (DESTROYS the NVMe):
+#     ./install-host.sh bmc-55
+#
+# Or step-by-step:
+#     make iso HOST=nas
+#     bmcctl install-arch bmc-55 \
+#         --iso 'nfs://192.168.1.44/home/j4y/bmcctl-iso-test/bmcctl/iso-build/out/nas.iso'
+
+[host]
+hostname = "nas"
+
+# Single fanxiang 4TB NVMe today. SATA bays empty. When real spinning
+# rust arrives we'll either zpool-import after install or rebuild with
+# multi-disk awareness in install.sh — TBD.
+target_disk = "/dev/nvme0n1"
+
+# REQUIRED acknowledgement that target_disk gets wiped. Anything
+# other than the literal string "yes" aborts before sgdisk runs.
+wipe_disk = "yes"
+
+timezone = "Europe/Warsaw"
+locale   = "en_US.UTF-8"
+keymap   = "us"
+
+[user]
+name = "j4y"
+
+# Same plain ed25519 as the router. Once the homelab is settled we'll
+# revisit (sk-ed25519 break-glass + plain for routine, or pam_u2f for
+# sudo-only). For now: matching key across all 3 boxes keeps the
+# operator workflow uniform.
+ssh_pubkey_file = "~/.ssh/id_ed25519.pub"
+
+# Locked console + key-only SSH, NOPASSWD wheel sudo. Same headless
+# server posture as the router.
+password_hash = ""
+
+[packages]
+# install.sh already pulls: base, linux, linux-firmware,
+# networkmanager, openssh, sudo, vim, git, curl, htop, intel-ucode.
+# Everything below layers on top. The base set is identical to the
+# router so the daily-driver shell experience matches; the storage
+# block at the end is what makes this box a NAS.
+extra = [
+    # --- networking / diagnostics (shared with router) ---
+    "ethtool",             # NIC inspection (Mellanox + onboard)
+    "tcpdump",             # packet capture
+    "mtr",                 # path / latency diagnostics
+    "iperf3",              # throughput testing — critical for the 25G fabric validation
+    "bind-tools",          # dig, nslookup, host
+    "nmap",                # port scanning
+    "tailscale",           # remote access from anywhere
+    "rsync",               # standard transfer tool (also our snapshot replication path)
+    "mosh",                # mobile shell — survives roaming
+    "iftop",               # per-interface live bandwidth
+    "nethogs",             # per-process bandwidth attribution
+    "lsof",                # who-has-what-open debugging
+    "wireguard-tools",     # raw WG (fallback)
+
+    # --- shells + multiplexers ---
+    "zsh",                 # primary interactive shell
+    "zsh-completions",
+    "tmux",
+    "starship",
+    "fastfetch",
+
+    # --- modern CLI replacements ---
+    "yazi",                # TUI file manager — gold for browsing the storage tree
+    "eza",
+    "bat",
+    "fd",
+    "ripgrep",
+    "fzf",
+    "zoxide",
+    "tree",
+    "jq",
+
+    # --- editors ---
+    "neovim",
+    "helix",
+
+    # --- dev / git tooling ---
+    "github-cli",
+    "git-delta",
+    "lazygit",
+    "openssh",
+
+    # --- monitoring / hardware ---
+    "btop",
+    "iotop",
+    "lm_sensors",
+    "smartmontools",       # SMART for any future spinning rust + the NVMe
+    "nvme-cli",            # `nvme smart-log /dev/nvme0n1` — wear leveling + temp
+    "pciutils",
+    "usbutils",
+    "hdparm",              # legacy SATA tuning + standby/spindown control
+    "sdparm",              # SCSI/SAS variant of hdparm
+    "lshw",                # detailed hardware inventory
+    "stress-ng",           # synthetic load for burn-in / thermal validation
+
+    # --- quality of life ---
+    "man-db",
+    "man-pages",
+    "less",
+    "wget",
+    "unzip",
+    "zip",
+    "p7zip",
+
+    # --- NAS-specific: storage stack ---
+    "btrfs-progs",         # btrfs is the daily driver: snapshots, send/receive, COW
+    # Note on ZFS: NOT included here. zfs-dkms / zfs-utils are AUR-only
+    # and require building against the running kernel — fragile in a
+    # pacstrap context. Easier to add post-install once the NAS is up
+    # if we decide we want it. For now btrfs subvolumes + send|receive
+    # cover snapshots and replication.
+    "exfatprogs",          # external drive interop (cameras, USB-C SSDs)
+    "ntfs-3g",             # Windows volumes interop
+    "dosfstools",          # FAT/vfat (also for the ESP, already pulled)
+    "e2fsprogs",           # ext family
+    "xfsprogs",            # XFS — sometimes the right answer for big sequential workloads
+    "parted",              # `parted` + `partprobe` for disk admin
+    "gptfdisk",            # sgdisk
+    "lvm2",                # LVM in case we ever do dm-cache or stripe over multiple disks
+    "mdadm",               # software RAID (probably unused, but cheap)
+    "rclone",              # cloud sync — pairs with bbm for B2
+
+    # --- NAS-specific: network shares ---
+    "nfs-utils",           # Linux clients (workstation, router) get NFS exports
+    "samba",               # Mac / iOS / iPad clients get SMB shares
+    "avahi",               # mDNS so `nas.local` Just Works on the LAN
+    "nss-mdns",            # let glibc resolve *.local via avahi
+
+    # --- NAS-specific: backup tooling ---
+    "borg",                # repo-style backups with dedup + encryption
+    "restic",              # alternative; we'll pick one based on workload
+]

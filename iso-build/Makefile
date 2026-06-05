@@ -107,6 +107,14 @@ ifndef HOST
 endif
 	@echo "::: backend: $(notdir $(ISO_BACKEND))"
 	@$(ISO_BACKEND) $(HOST)
+	@# AMI MegaRAC's URL parser breaks on filenames with multiple dots
+	@# (e.g. an embedded date "2026.06.04"), so emit a stable single-dot
+	@# alias that bmcctl install-arch can hand to the BMC verbatim.
+	@latest=$$(ls -t $(OUT_DIR)/bmcctl-installer-$(HOST)-*x86_64.iso 2>/dev/null | head -n1); \
+	 if [[ -n $$latest ]]; then \
+	    ln -sfn "$$(basename $$latest)" "$(OUT_DIR)/$(HOST).iso"; \
+	    echo "::: stable alias: $(OUT_DIR)/$(HOST).iso -> $$(basename $$latest)"; \
+	 fi
 
 publish:
 ifndef HOST

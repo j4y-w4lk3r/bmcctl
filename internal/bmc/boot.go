@@ -100,7 +100,14 @@ func (c *Client) SetBootOverride(ctx context.Context, target BootOverrideTarget,
 }
 
 // patchBoot is the inner ETag GET + PATCH pair for the Boot subset
-// of a ComputerSystem (or its Settings sibling).
+// of a ComputerSystem (or its Settings sibling). Always pins
+// BootSourceOverrideMode to "UEFI" — without it, AMI MegaRAC inherits
+// whatever the firmware NVRAM had last set (often "Legacy"), and the
+// override silently no-ops once the on-disk system gains a UEFI
+// bootloader because the BIOS prefers UEFI entries over Legacy
+// overrides in mixed-mode builds. Reinstalls onto a previously-imaged
+// disk all stop working in that case (host just reboots into the old
+// install with the override quietly cleared to "Disabled").
 func (c *Client) patchBoot(ctx context.Context, path string, target BootOverrideTarget, enabled BootOverrideEnabled) error {
 	var doc map[string]any
 	status, headers, errBody, err := c.doFull(ctx, "GET", path, nil, nil, &doc)
@@ -120,12 +127,16 @@ func (c *Client) patchBoot(ctx context.Context, path string, target BootOverride
 		etag = "*"
 	}
 
-	body := map[string]any{
-		"Boot": map[string]any{
-			"BootSourceOverrideTarget":  string(target),
-			"BootSourceOverrideEnabled": string(enabled),
-		},
+	bootBody := map[string]any{
+		"BootSourceOverrideTarget":  string(target),
+		"BootSourceOverrideEnabled": string(enabled),
 	}
+	// Only pin Mode for actual boot redirects; clearing the override
+	// (target=None) shouldn't perturb the firmware's persistent Mode.
+	if target != BootTargetNone {
+		bootBody["BootSourceOverrideMode"] = "UEFI"
+	}
+	body := map[string]any{"Boot": bootBody}
 	status, _, errBody, err = c.doFull(ctx, "PATCH", path, body,
 		map[string]string{"If-Match": etag}, nil)
 	if err != nil {

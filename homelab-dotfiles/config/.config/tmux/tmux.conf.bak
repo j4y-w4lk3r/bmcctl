@@ -1,0 +1,53 @@
+# tmux configuration file
+
+# Change the default prefix from Ctrl+b to Ctrl+a (more ergonomic)
+unbind C-b
+set-option -g prefix C-a
+bind-key C-a send-prefix
+
+# Enable mouse support (scrolling, selecting panes, resizing panes)
+set -g mouse on
+
+# Start window numbering at 1 instead of 0
+set -g base-index 1
+setw -g pane-base-index 1
+
+# Automatically renumber windows when one is closed
+set -g renumber-windows on
+
+# Better split pane shortcuts
+# Use | for vertical splits and - for horizontal splits
+bind | split-window -h -c "#{pane_current_path}"
+bind - split-window -v -c "#{pane_current_path}"
+unbind '"'
+unbind %
+
+# Set vi mode for better navigation
+setw -g mode-keys vi
+
+# Use vi-like keys for copy mode navigation
+bind-key -T copy-mode-vi v send-keys -X begin-selection
+bind-key -T copy-mode-vi y send-keys -X copy-selection
+bind-key -T copy-mode-vi r send-keys -X rectangle-toggle
+
+# Improve status bar colors
+set -g status-style bg=black,fg=white
+set -g window-status-current-style bg=blue,fg=white,bold
+
+# Set status bar components
+set -g status-left-length 40
+set -g status-left "#[fg=green]Session: #S #[fg=yellow]#I #[fg=cyan]#P"
+set -g status-right "#[fg=cyan]%d %b %R"
+
+# Increase history limit
+set -g history-limit 10000
+
+# Set the default terminal mode to 256color mode
+set -g default-terminal "screen-256color"
+
+# Address vim mode switching delay
+set -s escape-time 0
+
+# Reload tmux config with 'r'
+bind r source-file ~/.config/tmux/tmux.conf \; display "Reloaded tmux config"
+

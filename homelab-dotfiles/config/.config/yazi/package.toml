@@ -1,0 +1,27 @@
+[[plugin.deps]]
+use = "KKV9/compress"
+rev = "e6007f7"
+hash = "e0b1051849756dd72fca874c320259a"
+
+[[plugin.deps]]
+use = "yazi-rs/plugins:piper"
+rev = "de33976"
+hash = "76ea4ff62db6ebe62e4653c2de95cbd"
+
+[[plugin.deps]]
+use = "wylie102/duckdb"
+rev = "3f8c863"
+hash = "87b9233a74325e95011670ed20bbd0d4"
+
+[[plugin.deps]]
+use = "MasouShizuka/projects"
+rev = "198c2ba"
+hash = "5eeb4f0919ce6be5d941a9290c131d7d"
+
+[[plugin.deps]]
+use = "yazi-rs/plugins:mount"
+rev = "598cdb6"
+hash = "e3260d0b1feded8c8e3ae3afa1169e30"
+
+[flavor]
+deps = []

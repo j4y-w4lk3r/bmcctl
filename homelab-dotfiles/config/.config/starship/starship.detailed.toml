@@ -1,0 +1,145 @@
+# Detailed Starship prompt (generated from current starship.toml)
+"$schema" = 'https://starship.rs/config-schema.json'
+
+command_timeout = 2000
+
+format = """
+$directory\
+$hostname\
+$git_branch\
+$git_status\
+$custom\
+$python\
+$golang\
+$rust\
+$java\
+$ruby\
+$cmd_duration\
+$line_break\
+$character
+"""
+
+right_format = """"""
+
+add_newline = false
+
+[character]
+success_symbol = "[●](bold green)"
+error_symbol = "[✗](bold red)"
+
+[package]
+disabled = true
+
+[time]
+disabled = true
+
+[git_branch]
+symbol = " "
+truncation_length = 20
+format = "[$symbol$branch(:$remote_name/$remote_branch)]($style) "
+always_show_remote = true
+ignore_branches = ["main"]
+
+[git_commit]
+commit_hash_length = 8
+style = "bold white"
+
+[git_state]
+format = '[\($state( $progress_current of $progress_total)\)]($style) '
+
+[git_status]
+conflicted = "✖"
+ahead = "↑${count}"
+behind = "↓${count}"
+diverged = "↕↑${ahead_count}↓${behind_count}"
+up_to_date = "✓"
+untracked = "?"
+stashed = "≡"
+modified = "!"
+staged = "+"
+renamed = "»"
+deleted = "✘"
+style = "bright-white"
+format = "([($all_status$ahead_behind)]($style) )"
+
+[custom.git_upstream]
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1'
+command = 'git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo no-upstream'
+format = "([$output]($style) )"
+style = "dimmed"
+
+[directory]
+truncation_length = 5
+truncate_to_repo = true
+style = "bold cyan"
+
+[hostname]
+ssh_only = false
+trim_at = "."
+format = "[@$hostname]($style) "
+style = "dim white"
+
+[python]
+symbol = " "
+format = '[${symbol}${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+
+[nodejs]
+disabled = true
+symbol = "⬢ "
+format = "[$symbol($version )]($style)"
+
+[ruby]
+symbol = " "
+format = "[$symbol($version )]($style)"
+
+[rust]
+symbol = " "
+format = "[$symbol($version )]($style)"
+
+[java]
+symbol = " "
+format = "[$symbol($version )]($style)"
+
+[golang]
+symbol = " "
+format = "[$symbol($version )]($style)"
+
+[cmd_duration]
+min_time = 2000
+format = "󰔟 [$duration](bold yellow)"
+
+[battery]
+disabled = true
+
+[shell]
+disabled = false
+bash_indicator = "bash"
+zsh_indicator = "zsh"
+fish_indicator = "fish"
+format = "[$indicator]($style) "
+
+[aws]
+disabled = true
+symbol = "  "
+
+[gcloud]
+disabled = true
+format = 'on [$symbol$active]($style) '
+
+[conda]
+symbol = " "
+
+[dart]
+symbol = " "
+
+[docker_context]
+symbol = " "
+
+[elixir]
+symbol = " "
+
+[elm]
+symbol = " "
+
+[php]
+symbol = " "

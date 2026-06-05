@@ -1,0 +1,220 @@
+# Homelab zshrc — Linux (Arch) variant synced from macOS ~/.zshrc.
+# Deployed by homelab-dotfiles/sync.sh as ~/.zshrc
+
+export FUNCNEST=1000
+unset MAILCHECK
+eval "$(zoxide init zsh)"
+
+#--------------------------------------------------------------------------------------------------------------------
+# Aliases
+alias m="mullvad"
+alias h="htop"
+alias b="btop"
+alias tm="tmux"
+alias tl="tailscale"
+alias tls="tailscale status"
+alias n="ssh"
+alias v="vim"
+alias g="git"
+alias gs='git status'
+alias gc='git commit'
+alias gp='git push'
+alias gl='git log --oneline'
+alias gd='git diff'
+alias gco='git checkout'
+alias gb='git branch'
+alias ga='git add'
+alias e="exit"
+alias f="fastfetch"
+alias c="clear"
+alias cat='bat'
+alias lg='lazygit'
+alias crs="source ~/.zshrc && clear && reset"
+alias sr='source ~/.zshrc && clear'
+alias take='mkcd'
+alias xc='clipcopy'
+alias xp='clippaste'
+alias ls='eza --icons=always'
+alias la='eza --icons=always -la'
+alias ll='eza --icons=always -lh'
+alias lt='eza --icons=always --tree'
+
+mkcd() { mkdir -p "$1" && cd "$1"; }
+port() { lsof -i :"$1"; }
+killport() { lsof -ti :"$1" | xargs kill -9; }
+
+export CURRENT_ZSHRC="${0:A}"
+export TERM=xterm-256color
+export EDITOR="${EDITOR:-nvim}"
+export VISUAL="${VISUAL:-nvim}"
+
+# Platform helpers (clipboard, open)
+[[ -f "$HOME/.config/zsh/platform.zsh" ]] && source "$HOME/.config/zsh/platform.zsh"
+
+# Colored man pages
+if command -v bat >/dev/null 2>&1; then
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+fi
+
+#--------------------------------------------------------------------------------------------------------------------
+# Completion
+zstyle ':completion:*' menu select
+autoload -Uz compinit && compinit
+autoload -Uz zmv
+
+# History
+HISTFILE=~/.zsh_history
+HISTSIZE=50000
+SAVEHIST=50000
+setopt HIST_IGNORE_DUPS HIST_IGNORE_ALL_DUPS HIST_FIND_NO_DUPS
+setopt HIST_SAVE_NO_DUPS SHARE_HISTORY INC_APPEND_HISTORY
+setopt AUTO_CD CORRECT EXTENDED_GLOB NO_BEEP
+
+# Zsh plugins (Arch paths)
+for _plug in \
+  /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh \
+  /usr/share/zsh-vi-mode/zsh-vi-mode.plugin.zsh \
+  /usr/share/forgit/forgit.plugin.zsh \
+  /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; do
+  [[ -r "$_plug" ]] && source "$_plug"
+done
+unset _plug
+
+# edit-command-line in nvim (Ctrl+Z)
+autoload -Uz edit-command-line
+zle -N orig-edit-command-line edit-command-line
+_edit_command_line_nvim() { EDITOR=nvim VISUAL=nvim zle orig-edit-command-line }
+zle -N edit-command-line _edit_command_line_nvim
+for _kmap in emacs viins vicmd; do
+  bindkey -M "$_kmap" '^Z' edit-command-line
+  bindkey -M "$_kmap" $'\e[122;5u' edit-command-line
+done
+unset _kmap
+
+# fzf
+[[ -f /usr/share/fzf/completion.zsh ]] && source /usr/share/fzf/completion.zsh
+[[ -f /usr/share/fzf/key-bindings.zsh ]] && source /usr/share/fzf/key-bindings.zsh
+[[ -f "$HOME/.config/fzf/zsh-keybindings.zsh" ]] && source "$HOME/.config/fzf/zsh-keybindings.zsh"
+
+# Tab: accept autosuggestion or complete
+_tab_autosuggest_or_complete() {
+  if (( $#POSTDISPLAY )); then zle autosuggest-accept
+  else zle expand-or-complete; fi
+}
+zle -N _tab_autosuggest_or_complete
+bindkey -M emacs '^I' _tab_autosuggest_or_complete
+bindkey -M viins '^I' _tab_autosuggest_or_complete
+
+# yazi cd-on-quit
+function y() {
+  local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+  yazi "$@" --cwd-file="$tmp"
+  if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+    builtin cd -- "$cwd"
+  fi
+  rm -f -- "$tmp"
+}
+
+#--------------------------------------------------------------------------------------------------------------------
+# Starship (detailed ↔ zen with Ctrl+G)
+case "${STARSHIP_CONFIG:-}" in
+  "$HOME/.config/starship.detailed.toml"|"")
+    export STARSHIP_CONFIG="$HOME/.config/starship/starship.detailed.toml" ;;
+esac
+[[ -f "${STARSHIP_CONFIG:-}" ]] || export STARSHIP_CONFIG="$HOME/.config/starship/starship.detailed.toml"
+eval "$(starship init zsh)"
+
+autoload -Uz add-zsh-hook
+typeset -g __prompt_sep_after_cmd=0
+__prompt_sep_mark() {
+  [[ -n "${ZLE-}" ]] && return 0
+  case "$1" in starship\ prompt*|*'starship prompt'*) return 0 ;; esac
+  __prompt_sep_after_cmd=1
+}
+__prompt_sep_draw() {
+  [[ -n "${ZLE-}" ]] && return 0
+  if (( __prompt_sep_after_cmd )); then
+    local -r cols=${COLUMNS:-80} line="${(l:${cols}::─:)}"
+    print -P -- "%F{244}${line}%f"
+    __prompt_sep_after_cmd=0
+  fi
+}
+add-zsh-hook preexec __prompt_sep_mark
+add-zsh-hook precmd  __prompt_sep_draw
+
+toggle_starship_prompt() {
+  local detailed="$HOME/.config/starship/starship.detailed.toml"
+  local zen="$HOME/.config/starship/starship.zen.toml"
+  if [[ "${STARSHIP_CONFIG:-$detailed}" == "$zen" ]]; then
+    export STARSHIP_CONFIG="$detailed"
+  else
+    export STARSHIP_CONFIG="$zen"
+  fi
+  zle reset-prompt
+}
+zle -N toggle_starship_prompt
+bindkey -M emacs '^G' toggle_starship_prompt
+bindkey -M viins '^G' toggle_starship_prompt
+
+# Tailscale SSH picker
+hs() {
+  command -v fzf >/dev/null || { echo >&2 "hs: install fzf"; return 1; }
+  command -v tailscale >/dev/null || { echo >&2 "hs: tailscale CLI not found"; return 1; }
+  local ssh_user="${TS_SSH_USER:-$USER}"
+  [[ -n $1 && $1 != -* ]] && { ssh_user=$1; shift; }
+  local line ip
+  line=$(
+    if command -v jq >/dev/null 2>&1; then
+      command tailscale status --json 2>/dev/null | jq -r '
+        [(if .Self then .Self else empty end), ((.Peer // {}) | to_entries[] | .value)][]
+        | select((.TailscaleIPs // []) | length > 0)
+        | [.TailscaleIPs[0], (.HostName // "?"), (.OS // "?")] | @tsv'
+    else
+      command tailscale status 2>/dev/null | awk '$1 ~ /^100\./ {print $1"\t"$2"\t"$4}'
+    fi | fzf --height=45% --reverse --delimiter=$'\t' --with-nth=1,2,3
+  ) || return 0
+  [[ -n "$line" ]] || return 0
+  ip="${line%%$'\t'*}"
+  command ssh "$@" "${ssh_user}@${ip}"
+}
+
+srall() {
+  local entry pane cmd count=0
+  for entry in $(tmux list-panes -a -F '#{pane_id}:#{pane_current_command}'); do
+    pane="${entry%%:*}"; cmd="${entry#*:}"
+    case "$cmd" in zsh|bash|sh) tmux send-keys -t "$pane" 'sr' Enter; ((count++)) ;; esac
+  done
+  echo "reloaded $count shell pane(s)"
+}
+
+ff() {
+  local out key file
+  out=$(fzf --expect=ctrl-o \
+    --preview 'bat --color=always {} 2>/dev/null || cat {}' \
+    --bind 'ctrl-y:execute-silent(echo -n "$PWD/{}" | clipcopy)+abort' \
+    --header 'enter=open | ctrl-o=nvim | ctrl-y=copy path')
+  key=$(head -1 <<< "$out"); file=$(sed -n '2p' <<< "$out")
+  [[ -z "$file" ]] && return
+  [[ "$key" = "ctrl-o" ]] && nvim "$file" || open "$file"
+}
+
+extract() {
+  [[ -f "$1" ]] || { echo "'$1' is not a file"; return 1; }
+  case "$1" in
+    *.tar.bz2) tar xjf "$1" ;; *.tar.gz|*.tgz) tar xzf "$1" ;;
+    *.tar.xz) tar xJf "$1" ;; *.zip) unzip "$1" ;;
+    *.7z) 7z x "$1" ;; *.rar) unrar x "$1" ;;
+    *) echo "'$1': unknown format" ;;
+  esac
+}
+
+export RIPGREP_CONFIG_PATH="${RIPGREP_CONFIG_PATH:-$HOME/.config/ripgrep/config}"
+export PATH="$HOME/bin:$PATH"
+
+#--------------------------------------------------------------------------------------------------------------------
+# Modular zsh (synced from Mac ~/.config/zsh/)
+[[ -f "$HOME/.config/zsh/git-account.zsh" ]] && source "$HOME/.config/zsh/git-account.zsh"
+[[ -f "$HOME/.config/zsh/jay.zsh" ]]         && source "$HOME/.config/zsh/jay.zsh"
+[[ -f "$HOME/.config/zsh/github.zsh" ]]       && source "$HOME/.config/zsh/github.zsh"
+[[ -f "$HOME/.config/zsh/imgconv.zsh" ]]      && source "$HOME/.config/zsh/imgconv.zsh"
+[[ -f "$HOME/.config/zsh/backblaze.zsh" ]]    && source "$HOME/.config/zsh/backblaze.zsh"

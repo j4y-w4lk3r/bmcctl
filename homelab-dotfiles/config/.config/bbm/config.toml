@@ -1,0 +1,24 @@
+# bbm configuration for the bu encrypted-bundle workflow.
+# Written by hand on 2026-05-29 (eventually `bbm init` will produce
+# something like this). chmod 600 — see permissions below.
+
+provider = "b2"
+
+# Backblaze region for this account is us-west-002 (matches what
+# `rclone lsd lsybb0:` uses internally and what the keyID is scoped to).
+endpoint = "https://s3.eu-central-003.backblazeb2.com"
+region   = "eu-central-003"
+
+# Dedicated bucket for the encrypted-bundle workflow. NOT the same as
+# the rclone lsybb0 default bucket; this one is purpose-built so the
+# `bu/` prefix shape is reserved for the encrypted secrets bundle.
+bucket = "j4y-bu"
+
+# Public half of the rclone lsybb0 application key. Plaintext is fine
+# (this is the access-ID half, not the secret).
+key_id   = "00311df924ea5810000000002"
+
+# Private half resolved at runtime via 1Password CLI. The vault UUID
+# is used because the human name "0-iot+network+yk" contains '+',
+# which op:// references don't accept verbatim.
+app_key = "op://g3irkmq3taou5ko6gwxwlkcjd4/Backblaze B2 - bu bundle/credential"

@@ -181,6 +181,8 @@ arch-chroot /mnt /usr/bin/env \
     KEYMAP="$KEYMAP" \
     USER_PUBKEY="${USER_PUBKEY:-}" \
     USER_PASSWORD_HASH="${USER_PASSWORD_HASH:-}" \
+    DOTFILES_BOOTSTRAP="${DOTFILES_BOOTSTRAP:-false}" \
+    DOTFILES_REPO="${DOTFILES_REPO:-https://github.com/j4y-w4lk3r/bmcctl.git}" \
     bash -e <<'CHROOT'
 
 # Time + locale
@@ -267,6 +269,15 @@ chmod 440 /etc/sudoers.d/10-wheel
 passwd -l root
 
 CHROOT
+
+# ---- first-boot dotfiles (copy from live ISO → installed system) ----
+if [[ ${DOTFILES_BOOTSTRAP:-} == "true" || ${DOTFILES_BOOTSTRAP:-} == "yes" ]]; then
+    echo "::: enabling first-boot dotfiles bootstrap"
+    mkdir -p /mnt/usr/local/lib/bmcctl /mnt/etc/systemd/system
+    install -m755 /usr/local/lib/bmcctl/dotfiles-bootstrap.sh /mnt/usr/local/lib/bmcctl/
+    install -m644 /etc/systemd/system/bmcctl-dotfiles.service /mnt/etc/systemd/system/
+    arch-chroot /mnt systemctl enable bmcctl-dotfiles.service
+fi
 
 # ---- copy install log into the new system for forensics ----
 mkdir -p /mnt/var/log

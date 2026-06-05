@@ -1,0 +1,16 @@
+[Unit]
+Description=bmcctl homelab dotfiles bootstrap (first boot)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/bmcctl/dotfiles-done
+
+[Service]
+Type=oneshot
+Environment=DOTFILES_REPO=https://github.com/j4y-w4lk3r/bmcctl.git
+Environment=DOTFILES_DIR=/home/j4y/bmcctl
+Environment=DOTFILES_USER=j4y
+ExecStart=/usr/local/lib/bmcctl/dotfiles-bootstrap.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

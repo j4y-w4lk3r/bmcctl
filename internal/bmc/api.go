@@ -28,6 +28,16 @@ type SystemInfo struct {
 		Health string `json:"Health"`
 		State  string `json:"State"`
 	} `json:"Status"`
+	// BootProgress.LastState tracks where the host is in its boot:
+	// "OSRunning" once the OS (or live installer) is up, and earlier
+	// states like "SystemHardwareInitializationComplete" /
+	// "OSBootStarted" while POSTing/booting. Optional in Redfish —
+	// boards that don't report it leave LastState empty. We use it to
+	// detect the post-install reboot on boards whose power-restore
+	// policy flips the host back On too fast to observe a clean Off.
+	BootProgress struct {
+		LastState string `json:"LastState"`
+	} `json:"BootProgress"`
 	ProcessorSummary struct {
 		Count int    `json:"Count"`
 		Model string `json:"Model"`

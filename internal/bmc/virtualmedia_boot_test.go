@@ -231,3 +231,62 @@ func TestPollPowerState_HonorsContextCancel(t *testing.T) {
 		t.Errorf("error should mention the target state: %v", err)
 	}
 }
+
+func TestWaitForInstallComplete_DetectsPowerOff(t *testing.T) {
+	c, srv := pwForMock(t)
+	srv.SetPowerState("On") // installer running
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	// install.sh halts the box after a moment.
+	go func() {
+		time.Sleep(120 * time.Millisecond)
+		srv.SetPowerState("Off")
+	}()
+
+	reason, err := c.WaitForInstallComplete(ctx, 30*time.Millisecond)
+	if err != nil {
+		t.Fatalf("WaitForInstallComplete: %v", err)
+	}
+	if !strings.Contains(reason, "powered off") {
+		t.Errorf("reason = %q, want it to mention the power-off signal", reason)
+	}
+}
+
+func TestWaitForInstallComplete_DetectsRebootWhenOffMissed(t *testing.T) {
+	c, srv := pwForMock(t)
+	// Simulate a board whose power-restore policy keeps PowerState=On
+	// throughout: the only observable signal is BootProgress cycling
+	// from the live installer (OSRunning) back through a boot state.
+	srv.SetPowerState("On")
+	srv.SetBootProgress("OSRunning")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	go func() {
+		time.Sleep(120 * time.Millisecond)
+		srv.SetBootProgress("SystemHardwareInitializationComplete")
+	}()
+
+	reason, err := c.WaitForInstallComplete(ctx, 30*time.Millisecond)
+	if err != nil {
+		t.Fatalf("WaitForInstallComplete: %v", err)
+	}
+	if !strings.Contains(reason, "rebooted") {
+		t.Errorf("reason = %q, want it to mention the reboot signal", reason)
+	}
+}
+
+func TestWaitForInstallComplete_HonorsContextCancel(t *testing.T) {
+	c, srv := pwForMock(t)
+	// Stays On with no boot-progress change forever — must time out.
+	srv.SetPowerState("On")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	defer cancel()
+	if _, err := c.WaitForInstallComplete(ctx, 40*time.Millisecond); err == nil {
+		t.Fatal("WaitForInstallComplete must error on context deadline")
+	}
+}

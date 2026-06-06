@@ -1213,15 +1213,19 @@ func cmdInstallArch(args []string) error {
 	}
 	fmt.Printf("✓ %s: PowerState=On — installer is running\n", entry.Host)
 
-	// Phase 7: rest of the budget for the install itself.
+	// Phase 7: rest of the budget for the install itself. We poll fast
+	// (2s) and accept either a clean Off or a detected post-install
+	// reboot — see WaitForInstallComplete for why a slow Off-only poll
+	// races against boards that auto-power-on after the OS halts.
 	doneCtx, cancel7 := context.WithDeadline(context.Background(), totalDeadline)
 	defer cancel7()
-	fmt.Printf("…  waiting up to %s for PowerState=Off (install completion)\n",
+	fmt.Printf("…  waiting up to %s for install to complete (PowerState=Off or post-install reboot)\n",
 		time.Until(totalDeadline).Round(time.Second))
-	if _, err := c.PollPowerState(doneCtx, "Off", 10*time.Second); err != nil {
+	reason, err := c.WaitForInstallComplete(doneCtx, 2*time.Second)
+	if err != nil {
 		return fmt.Errorf("waiting for install to complete: %w", err)
 	}
-	fmt.Printf("✓ %s: PowerState=Off — install completed (install.sh ran systemctl poweroff)\n", entry.Host)
+	fmt.Printf("✓ %s: install completed — %s\n", entry.Host, reason)
 	fmt.Printf("→ next: bmcctl power %s on   (then: ssh %s@<host-ip>)\n",
 		entry.Label, entry.Username)
 	return nil

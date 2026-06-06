@@ -298,6 +298,35 @@ if [[ "${DOTFILES_BOOTSTRAP:-false}" =~ ^([Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1)$ ]]; 
     fi
 fi
 
+# ---- install stamp ----
+# Write a unique, timestamped fingerprint of THIS install so a fresh box
+# is visibly, unambiguously new — handy when a reinstall "looks" like it
+# might not have wiped (you can compare the id before/after). The id +
+# timestamp land in /etc/bmcctl-install-id, and a one-time banner is dropped
+# into /etc/motd.d/ so it shows on the first SSH login.
+INSTALL_ID=$(cat /proc/sys/kernel/random/uuid 2>/dev/null || date -u +%s)
+INSTALLED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+ISO_LABEL=$(cat /run/archiso/bootmnt/arch/version 2>/dev/null \
+    || cat /etc/arch-release 2>/dev/null || echo "bmcctl-iso")
+mkdir -p /mnt/etc/motd.d
+cat > /mnt/etc/bmcctl-install-id <<STAMP
+id=$INSTALL_ID
+installed_at=$INSTALLED_AT
+hostname=$HOSTNAME
+installer=bmcctl-iso
+iso=$ISO_LABEL
+STAMP
+chmod 644 /mnt/etc/bmcctl-install-id
+cat > /mnt/etc/motd.d/10-bmcctl-install.conf <<MOTD
+  ┌─ bmcctl fresh install ─────────────────────────────────────
+  │  host:        $HOSTNAME
+  │  installed:   $INSTALLED_AT (UTC)
+  │  install-id:  $INSTALL_ID
+  └────────────────────────────────────────────────────────────
+MOTD
+chmod 644 /mnt/etc/motd.d/10-bmcctl-install.conf
+echo "::: install-id $INSTALL_ID written to /etc/bmcctl-install-id"
+
 # ---- copy install log into the new system for forensics ----
 mkdir -p /mnt/var/log
 cp "$LOG" /mnt/var/log/bmcctl-install.log
@@ -308,6 +337,7 @@ echo
 echo "=========================================================="
 echo "  bmcctl-install: SUCCESS"
 echo "  hostname:    $HOSTNAME"
+echo "  install-id:  $INSTALL_ID"
 echo "  user:        $USERNAME"
 echo "  ssh:         $(grep -c . "/mnt/home/$USERNAME/.ssh/authorized_keys" 2>/dev/null || echo 0) authorized key(s)"
 echo "  poweroff in 5s. BMC will see PowerState=Off when this is"

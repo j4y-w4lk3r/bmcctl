@@ -55,6 +55,7 @@ type Server struct {
 	password          string
 	passwordChangeReq bool
 	powerState        string
+	bootProgress      string
 	manufacturer      string
 	model             string
 	sku               string
@@ -191,6 +192,16 @@ func (s *Server) PowerLog() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string(nil), s.powerLog...)
+}
+
+// SetBootProgress lets a test drive the host's BootProgress.LastState
+// (e.g. "OSRunning" while the live installer runs, then a fresh boot
+// state to simulate the post-install reboot) so WaitForInstallComplete's
+// reboot-detection path can be exercised.
+func (s *Server) SetBootProgress(state string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.bootProgress = state
 }
 
 // SetPowerState lets a test forcibly transition the host's power
@@ -354,6 +365,9 @@ func (s *Server) serveSystem(w http.ResponseWriter, _ *http.Request) {
 		"SerialNumber": s.serial,
 		"BiosVersion":  s.biosVersion,
 		"PowerState":   s.powerState,
+		"BootProgress": map[string]any{
+			"LastState": s.bootProgress,
+		},
 		"Boot": map[string]any{
 			"BootSourceOverrideTarget":  s.bootTarget,
 			"BootSourceOverrideEnabled": s.bootEnabled,

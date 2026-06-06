@@ -49,8 +49,11 @@ type Backend interface {
 	// identified by ref. URL/title/tags are not touched.
 	UpdateBMCPassword(ref, password string) error
 
-	// GetBMCPassword returns the password stored against ref.
-	GetBMCPassword(ref string) (string, error)
+	// GetBMCPassword returns the password stored against ref. vault is
+	// the item's 1Password vault (ID or name); it may be empty for
+	// interactive sessions but is REQUIRED when `op` runs as a service
+	// account, which refuses `op item get <uuid>` without a vault.
+	GetBMCPassword(vault, ref string) (string, error)
 
 	// FindBMCItem locates an item by title (case-insensitive) within
 	// the given vault. Empty string is returned (no error) when not

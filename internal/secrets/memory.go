@@ -99,7 +99,7 @@ func (m *Memory) UpdateBMCPassword(ref, password string) error {
 	return nil
 }
 
-func (m *Memory) GetBMCPassword(ref string) (string, error) {
+func (m *Memory) GetBMCPassword(_ /*vault*/, ref string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	item := m.lookupLocked(ref)

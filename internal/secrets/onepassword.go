@@ -141,11 +141,18 @@ func (OnePassword) UpdateBMCPassword(ref, password string) error {
 	return nil
 }
 
-func (OnePassword) GetBMCPassword(ref string) (string, error) {
+func (OnePassword) GetBMCPassword(vault, ref string) (string, error) {
 	if ref == "" {
 		return "", errors.New("GetBMCPassword: empty item reference")
 	}
-	out, err := runOp("item", "get", ref, "--fields", "label=password", "--reveal")
+	// Service-account sessions reject `op item get <uuid>` unless a
+	// vault is supplied. Always pass --vault when we know it (we store
+	// it in the registry), which is harmless for interactive sessions.
+	args := []string{"item", "get", ref, "--fields", "label=password", "--reveal"}
+	if vault != "" {
+		args = append(args, "--vault", vault)
+	}
+	out, err := runOp(args...)
 	if err != nil {
 		return "", fmt.Errorf("op item get failed: %w", err)
 	}

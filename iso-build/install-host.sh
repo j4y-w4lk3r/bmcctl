@@ -182,20 +182,44 @@ NFS_URL="nfs://$ISO_HOST_IP$ISO_HOST_PATH/$LABEL.iso"
 # --------- step 5: install-arch -------------------------------------
 
 step "bmcctl install-arch $LABEL --iso $NFS_URL --wait $WAIT_MIN"
-"$BMCCTL" install-arch "$LABEL" --iso "$NFS_URL" --wait "$WAIT_MIN" || die "install-arch failed" 1
+INSTALL_OK=1
+"$BMCCTL" install-arch "$LABEL" --iso "$NFS_URL" --wait "$WAIT_MIN" || INSTALL_OK=0
 
 # --------- step 6: cleanup ------------------------------------------
+#
+# Two distinct outcomes, and BOTH must clear the boot override. Leaving
+# a "boot from CD (Continuous)" override + a mounted installer ISO on a
+# host is a re-wipe landmine: the very next reboot re-runs the unattended
+# installer and nukes the disk. install-arch confirming completion is the
+# happy path; if it could NOT confirm (the wait timed out), we still tear
+# down the override so an unattended box can never re-wipe itself — we
+# just don't power-cycle, so an operator can inspect via SOL.
 
 if [[ $NO_CLEANUP -eq 1 ]]; then
-	warn "--no-cleanup: leaving ISO mounted, boot override set, host off"
+	warn "--no-cleanup: leaving ISO mounted, boot override set, host as-is"
+	[[ $INSTALL_OK -eq 1 ]] || warn "(note: install-arch did NOT confirm completion)"
 	exit 0
 fi
 
-step "cleanup: eject + clear boot + power on"
-"$BMCCTL" eject-iso "$LABEL" --slot CD1 || warn "eject-iso failed (non-fatal)"
+if [[ $INSTALL_OK -eq 1 ]]; then
+	step "cleanup: eject + clear boot + power on"
+	"$BMCCTL" eject-iso "$LABEL" --slot CD1 || warn "eject-iso failed (non-fatal)"
+	"$BMCCTL" boot "$LABEL" none || warn "boot none failed (non-fatal)"
+	"$BMCCTL" power "$LABEL" on
+	ok "host powered on; boot from disk imminent"
+	echo
+	echo "next: ssh into the new host once it DHCPs (try \`avahi-resolve -n4 $LABEL.local\` if mDNS is on it,"
+	echo "      or scan the LAN — the install embedded \$HOME/.ssh/id_ed25519.pub)"
+	exit 0
+fi
+
+# install-arch could not confirm completion. Defuse the landmine without
+# disturbing a possibly-still-running install: clear the boot override
+# (only affects the NEXT boot) and eject the media, but do NOT power-cycle.
+warn "install-arch did not confirm completion within --wait $WAIT_MIN min"
+step "safe de-landmine: clearing boot override + ejecting ISO (no power change)"
 "$BMCCTL" boot "$LABEL" none || warn "boot none failed (non-fatal)"
-"$BMCCTL" power "$LABEL" on
-ok "host powered on; boot from disk imminent"
-echo
-echo "next: ssh into the new host once it DHCPs (try \`avahi-resolve -n4 router.local\` if mDNS is on it,"
-echo "      or scan the LAN — the install embedded \$HOME/.ssh/id_ed25519.pub)"
+"$BMCCTL" eject-iso "$LABEL" --slot CD1 || warn "eject-iso failed (non-fatal)"
+die "could not confirm install completion — boot override cleared so the host
+    cannot re-wipe itself on reboot. Inspect via SOL/KVM (the installer drops to
+    a root shell on failure), then re-run \`install-host.sh $LABEL --rebuild\` if needed." 1

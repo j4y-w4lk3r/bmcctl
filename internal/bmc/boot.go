@@ -205,3 +205,73 @@ func (c *Client) PollPowerState(ctx context.Context, want string, interval time.
 		}
 	}
 }
+
+// WaitForInstallComplete blocks until the unattended installer signals
+// it is done, then returns a short human-readable reason.
+//
+// The installer ends with `systemctl poweroff`, so the canonical signal
+// is the host going On->Off. But that signal is fragile: on boards whose
+// power-restore policy is "Always On" / "Last State", the BMC bounces the
+// host back On within a second or two of the OS halting — fast enough that
+// a slow PowerState poll steps right over the brief Off and then waits
+// forever (this is the "missed-Off race" that left an installer ISO + boot
+// override stuck on a host). To be robust we watch two independent signals
+// and succeed on whichever lands first:
+//
+//   - PowerState == Off            (clean halt, observed in time)
+//   - BootProgress leaves OSRunning (the live installer) for a fresh boot
+//     cycle — proof the box halted and rebooted into the installed disk,
+//     even when the Off itself was never observable.
+//
+// Callers must have already confirmed the host is On (installer running)
+// before calling this. `interval` should be short (a couple of seconds) so
+// a brief Off is actually caught; <=0 defaults to 2s.
+func (c *Client) WaitForInstallComplete(ctx context.Context, interval time.Duration) (string, error) {
+	if interval <= 0 {
+		interval = 2 * time.Second
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+
+	// sawOSRunning gates the reboot signal: we only treat a departure
+	// from OSRunning as "rebooted after install" once we've actually
+	// seen the live installer reach OSRunning. That avoids a false
+	// positive from early boot states the live env may pass through.
+	sawOSRunning := false
+	check := func(sys *SystemInfo) (string, bool) {
+		if strings.EqualFold(sys.PowerState, "Off") {
+			return "host powered off — install.sh ran `systemctl poweroff`", true
+		}
+		ls := sys.BootProgress.LastState
+		switch {
+		case strings.EqualFold(ls, "OSRunning"):
+			sawOSRunning = true
+		case sawOSRunning && ls != "":
+			return fmt.Sprintf("host rebooted (BootProgress=%s) — install halted and the board bounced it back On", ls), true
+		}
+		return "", false
+	}
+
+	// Sample once up front: the install may have finished between the
+	// power-on confirmation and this call.
+	if sys, err := c.GetSystem(ctx); err == nil {
+		if reason, done := check(sys); done {
+			return reason, nil
+		}
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("waiting for install to complete: %w", ctx.Err())
+		case <-t.C:
+			sys, err := c.GetSystem(ctx)
+			if err != nil {
+				// Host link commonly drops mid-reboot; keep polling.
+				continue
+			}
+			if reason, done := check(sys); done {
+				return reason, nil
+			}
+		}
+	}
+}

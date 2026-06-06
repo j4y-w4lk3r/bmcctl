@@ -20,7 +20,11 @@ for i in $(seq 1 60); do
 done
 
 if [[ -d $DIR/.git ]]; then
-  git -C "$DIR" pull --ff-only
+  # Pull AS THE USER (repo is user-owned). Running git as root here trips
+  # git's "dubious ownership" guard and aborts the whole bootstrap, which
+  # also breaks the retry-on-next-boot path. Never fatal: a failed pull
+  # must not stop us from re-applying the dotfiles already on disk.
+  sudo -u "$USER" git -C "$DIR" pull --ff-only || echo "WARN: git pull failed; applying existing checkout"
 else
   sudo -u "$USER" git clone "$REPO" "$DIR"
 fi

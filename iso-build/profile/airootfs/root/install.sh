@@ -284,7 +284,7 @@ CHROOT
 # the install (which would leave the box powered On and unbootable) — at
 # worst the box boots without auto-dotfiles and we apply them manually.
 # That's why the whole block is an && chain caught by `|| echo WARN`.
-if [[ ${DOTFILES_BOOTSTRAP:-} == "true" || ${DOTFILES_BOOTSTRAP:-} == "yes" ]]; then
+if [[ "${DOTFILES_BOOTSTRAP:-false}" =~ ^([Tt][Rr][Uu][Ee]|[Yy][Ee][Ss]|1)$ ]]; then
     echo "::: enabling first-boot dotfiles bootstrap"
     if [[ ! -f /usr/local/lib/bmcctl/dotfiles-bootstrap.sh || ! -f /etc/systemd/system/bmcctl-dotfiles.service ]]; then
         echo "WARN: first-boot assets missing from live ISO (dotfiles-bootstrap.sh / bmcctl-dotfiles.service) — skipping; apply dotfiles manually after boot"

@@ -80,6 +80,14 @@ DOTFILES_BOOTSTRAP=$(read_toml '.dotfiles.bootstrap')
 DOTFILES_REPO=$(read_toml '.dotfiles.repo')
 DOTFILES_BOOTSTRAP=${DOTFILES_BOOTSTRAP:-false}
 DOTFILES_REPO=${DOTFILES_REPO:-https://github.com/j4y-w4lk3r/bmcctl.git}
+# TOML booleans render parser-dependently: tomlq emits "true"/"false",
+# but the python3/tomllib fallback prints Python's "True"/"False". The
+# on-ISO install.sh compares against lowercase "true", so normalize to a
+# canonical token here — otherwise first-boot is silently skipped.
+case "$(printf '%s' "$DOTFILES_BOOTSTRAP" | tr '[:upper:]' '[:lower:]')" in
+    true|yes|1) DOTFILES_BOOTSTRAP=true ;;
+    *)          DOTFILES_BOOTSTRAP=false ;;
+esac
 
 # Sensible defaults for omitted optional fields.
 LOCALE=${LOCALE:-en_US.UTF-8}

@@ -40,10 +40,14 @@ rsync -a "$CONFIG_SRC/pikvm/"           "$HOME/.config/pikvm/"
 rsync -a "$CONFIG_SRC/starship/"        "$HOME/.config/starship/"
 rsync -a "$CONFIG_SRC/tmux/"            "$HOME/.config/tmux/"
 rsync -a "$CONFIG_SRC/yazi/"            "$HOME/.config/yazi/"
-rsync -a "$CONFIG_SRC/zsh/"             "$HOME/.config/zsh/"
-rsync -a "$CONFIG_SRC/jay/profiles/"    "$HOME/.config/jay/profiles/"
-rsync -a "$DOTFILES_DIR/jay/profiles/"  "$HOME/.config/jay/profiles/"
-rsync -a "$DOTFILES_DIR/zsh/platform.zsh" "$HOME/.config/zsh/platform.zsh"
+# zsh modules live at config/zsh — NOT under the nested config/.config.
+# Resolve canonically so both the flat and legacy layouts work.
+ZSH_SRC="$DOTFILES_DIR/config/zsh"
+[[ -d "$ZSH_SRC" ]] || ZSH_SRC="$CONFIG_SRC/zsh"
+if [[ -d "$ZSH_SRC" ]]; then rsync -a "$ZSH_SRC/" "$HOME/.config/zsh/"; fi
+if [[ -d "$CONFIG_SRC/jay/profiles" ]]; then rsync -a "$CONFIG_SRC/jay/profiles/" "$HOME/.config/jay/profiles/"; fi
+if [[ -d "$DOTFILES_DIR/jay/profiles" ]]; then rsync -a "$DOTFILES_DIR/jay/profiles/" "$HOME/.config/jay/profiles/"; fi
+if [[ -f "$DOTFILES_DIR/zsh/platform.zsh" ]]; then rsync -a "$DOTFILES_DIR/zsh/platform.zsh" "$HOME/.config/zsh/platform.zsh"; fi
 
 mkdir -p "$HOME/.config/rui"
 [[ -f "$HOME/.config/rui/.env" ]] || cp "$DOTFILES_DIR/rui/.env.example" "$HOME/.config/rui/.env"

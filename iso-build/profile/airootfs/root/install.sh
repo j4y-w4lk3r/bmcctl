@@ -46,6 +46,14 @@ on_error() {
     echo "=========================================================="
     echo "  bmcctl-install: FAILED with exit code $rc"
     echo "  log: $LOG"
+    # Persist the log onto the target disk (if it's already mounted) so
+    # the failure can be post-mortemed after a reboot — no SOL/KVM
+    # needed. Best-effort: never let cleanup itself raise a new error.
+    if mountpoint -q /mnt 2>/dev/null; then
+        mkdir -p /mnt/var/log 2>/dev/null || true
+        cp "$LOG" /mnt/var/log/bmcctl-install.log 2>/dev/null || true
+        echo "  log also copied to (disk):/var/log/bmcctl-install.log"
+    fi
     echo "  drop to a root shell so you can debug from SOL/KVM."
     echo "=========================================================="
     # Don't exec another shell here — systemd is supervising us;
@@ -271,12 +279,23 @@ passwd -l root
 CHROOT
 
 # ---- first-boot dotfiles (copy from live ISO → installed system) ----
+# NON-FATAL by design: the OS is already fully installed and bootable by
+# this point. A failure enabling the first-boot service must never abort
+# the install (which would leave the box powered On and unbootable) — at
+# worst the box boots without auto-dotfiles and we apply them manually.
+# That's why the whole block is an && chain caught by `|| echo WARN`.
 if [[ ${DOTFILES_BOOTSTRAP:-} == "true" || ${DOTFILES_BOOTSTRAP:-} == "yes" ]]; then
     echo "::: enabling first-boot dotfiles bootstrap"
-    mkdir -p /mnt/usr/local/lib/bmcctl /mnt/etc/systemd/system
-    install -m755 /usr/local/lib/bmcctl/dotfiles-bootstrap.sh /mnt/usr/local/lib/bmcctl/
-    install -m644 /etc/systemd/system/bmcctl-dotfiles.service /mnt/etc/systemd/system/
-    arch-chroot /mnt systemctl enable bmcctl-dotfiles.service
+    if [[ ! -f /usr/local/lib/bmcctl/dotfiles-bootstrap.sh || ! -f /etc/systemd/system/bmcctl-dotfiles.service ]]; then
+        echo "WARN: first-boot assets missing from live ISO (dotfiles-bootstrap.sh / bmcctl-dotfiles.service) — skipping; apply dotfiles manually after boot"
+    else
+        {
+            mkdir -p /mnt/usr/local/lib/bmcctl /mnt/etc/systemd/system &&
+            install -m755 /usr/local/lib/bmcctl/dotfiles-bootstrap.sh /mnt/usr/local/lib/bmcctl/ &&
+            install -m644 /etc/systemd/system/bmcctl-dotfiles.service /mnt/etc/systemd/system/ &&
+            arch-chroot /mnt systemctl enable bmcctl-dotfiles.service
+        } || echo "WARN: first-boot dotfiles enablement failed (non-fatal) — apply dotfiles manually after boot"
+    fi
 fi
 
 # ---- copy install log into the new system for forensics ----

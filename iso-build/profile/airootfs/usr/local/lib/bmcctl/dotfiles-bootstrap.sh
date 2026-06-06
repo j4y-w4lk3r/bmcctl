@@ -36,7 +36,13 @@ else
   sudo -u "$USER" rsync -a "$DIR/homelab-dotfiles/config/zsh/" "/home/$USER/.config/zsh/" 2>/dev/null || true
   sudo -u "$USER" rsync -a "$DIR/homelab-dotfiles/jay/profiles/" "/home/$USER/.config/jay/profiles/" 2>/dev/null || true
   install -o "$USER" -g "$USER" -m644 "$DIR/homelab-dotfiles/zshrc.linux" "/home/$USER/.zshrc"
-  chsh -s /bin/zsh "$USER"
+fi
+
+# Make zsh the login shell regardless of which apply path ran above
+# (apply-local.sh only lays down config; it does not chsh). Best-effort:
+# if zsh isn't installed on this host, leave the shell untouched.
+if command -v zsh >/dev/null 2>&1; then
+  chsh -s "$(command -v zsh)" "$USER" || true
 fi
 
 mkdir -p /var/lib/bmcctl

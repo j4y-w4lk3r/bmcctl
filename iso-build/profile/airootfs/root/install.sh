@@ -163,7 +163,7 @@ mount "$ESP" /mnt/boot
 BASE_PKGS=(
     base linux linux-firmware
     networkmanager openssh sudo
-    vim git curl htop
+    vim git curl htop rsync # rsync: required by homelab-dotfiles apply-local.sh
     intel-ucode # AMD users override via POST_INSTALL_PACKAGES
 )
 EXTRA_PKGS=()

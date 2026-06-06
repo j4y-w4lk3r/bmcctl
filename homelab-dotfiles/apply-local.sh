@@ -50,7 +50,11 @@ if [[ -d "$DOTFILES_DIR/jay/profiles" ]]; then rsync -a "$DOTFILES_DIR/jay/profi
 if [[ -f "$DOTFILES_DIR/zsh/platform.zsh" ]]; then rsync -a "$DOTFILES_DIR/zsh/platform.zsh" "$HOME/.config/zsh/platform.zsh"; fi
 
 mkdir -p "$HOME/.config/rui"
-[[ -f "$HOME/.config/rui/.env" ]] || cp "$DOTFILES_DIR/rui/.env.example" "$HOME/.config/rui/.env"
+# Seed rui's .env from the example only if both the example exists and a
+# real .env isn't already in place. Optional — never abort if missing.
+if [[ ! -f "$HOME/.config/rui/.env" && -f "$DOTFILES_DIR/rui/.env.example" ]]; then
+  cp "$DOTFILES_DIR/rui/.env.example" "$HOME/.config/rui/.env"
+fi
 
 cp "$DOTFILES_DIR/zshrc.linux" "$HOME/.zshrc"
 sed -i 's/pbcopy/clipcopy/g; s/pbpaste/clippaste/g' "$HOME/.config/zsh/github.zsh" 2>/dev/null || true

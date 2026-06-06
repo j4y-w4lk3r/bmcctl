@@ -55,6 +55,6 @@ mkdir -p "$HOME/.config/rui"
 cp "$DOTFILES_DIR/zshrc.linux" "$HOME/.zshrc"
 sed -i 's/pbcopy/clipcopy/g; s/pbpaste/clippaste/g' "$HOME/.config/zsh/github.zsh" 2>/dev/null || true
 
-echo "::: smoke test"
-zsh -lic 'echo shell=$SHELL; command -v starship yazi tmux; fastfetch -l none 2>/dev/null | head -5'
+echo "::: smoke test (informational — never fails the apply)"
+zsh -lic 'echo shell=$SHELL; command -v starship yazi tmux btop zoxide 2>/dev/null; fastfetch -l none 2>/dev/null | head -5' || true
 echo "✓ apply-local done — open a new SSH session or: exec zsh"

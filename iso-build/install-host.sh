@@ -109,25 +109,32 @@ step "BMC pre-flight: enable RMedia + configure 1+ CD slot"
 # Both actions return 200/202 with a "DelayInActionCompletion" message
 # on first run, and a similarly benign error on no-op. We don't parse
 # the response; we just verify a CD slot exists afterwards.
-PW_REF=$("$BMCCTL" ls --json 2>/dev/null | python3 -c 'import json,sys,os;
-try:
-  d=json.load(sys.stdin)
-  for h in d.get("hosts",[]):
-    if h.get("label","").lower()==os.environ["LABEL"].lower():
-      print(f"op://{h.get(\"op_vault\",\"\")}/{h.get(\"op_item_uuid\",\"\")}/password"); break
-except Exception: pass' LABEL="$LABEL" 2>/dev/null || true)
-PW=""
-if [[ -n "$PW_REF" ]]; then
-	PW=$(op read "$PW_REF" 2>/dev/null || true)
-fi
+#
+# We need the plaintext password for these raw OEM curl calls. Read it
+# from the registry's op_vault/op_item_uuid via `op read` — the op://
+# reference carries the vault, so this works for both interactive and
+# service-account sessions. An explicit BMC_PW env always wins.
+PW="${BMC_PW:-}"
 if [[ -z "$PW" ]]; then
-	# bmcctl didn't expose a JSON listing yet — fall back: bmcctl
-	# already authed for `info`, so the BMC accepted the credentials.
-	# We still need plaintext pw for our raw curl pre-flight calls.
-	# Prompt the user to grab it once and pass via env BMC_PW.
-	[[ -n "${BMC_PW:-}" ]] || die "set BMC_PW=<password> in env (or have op CLI signed in) so the script can call AMI OEM endpoints" 2
-	PW=$BMC_PW
+	REG=""
+	for cand in "${BMCCTL_CONFIG:-}" \
+	            "${XDG_CONFIG_HOME:-$HOME/.config}/bmcctl/hosts.json" \
+	            "$HOME/.config/bmcctl/hosts.json" \
+	            "$HOME/Library/Application Support/bmcctl/hosts.json"; do
+		[[ -n "$cand" && -f "$cand" ]] && { REG="$cand"; break; }
+	done
+	if [[ -n "$REG" ]]; then
+		PW_REF=$(LABEL="$LABEL" python3 -c 'import json,os,sys
+d=json.load(open(sys.argv[1]))
+for h in d.get("hosts",[]):
+    if h.get("label","").lower()==os.environ["LABEL"].lower():
+        v=h.get("op_vault",""); u=h.get("op_item_uuid","")
+        if v and u: print(f"op://{v}/{u}/password")
+        break' "$REG" 2>/dev/null || true)
+		[[ -n "$PW_REF" ]] && PW=$(op read "$PW_REF" 2>/dev/null || true)
+	fi
 fi
+[[ -n "$PW" ]] || die "could not resolve BMC password — set BMC_PW=<pw> or ensure op is authed (OP_SERVICE_ACCOUNT_TOKEN or \`op signin\`) and the registry has op_vault+op_item_uuid for $LABEL" 2
 
 curl -ksu "admin:$PW" -X POST -H 'Content-Type: application/json' \
 	-d '{"RMediaState":"Enable"}' \

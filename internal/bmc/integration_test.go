@@ -99,7 +99,7 @@ func TestInitFlow_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Memory.CreateBMCItem: %v", err)
 	}
-	if got, _ := mem.GetBMCPassword(uuid); got != pw {
+	if got, _ := mem.GetBMCPassword("", uuid); got != pw {
 		t.Errorf("password round-trip mismatch")
 	}
 	if mem.Len() != 1 {
@@ -144,7 +144,7 @@ func TestInitFlow_RotatePassword(t *testing.T) {
 		t.Errorf("new password should work: %v", err)
 	}
 	// Memory backend stored pw2, not pw1.
-	if got, _ := mem.GetBMCPassword(uuid); got != pw2 {
+	if got, _ := mem.GetBMCPassword("", uuid); got != pw2 {
 		t.Errorf("memory still holds old password")
 	}
 	if srv.Password() != pw2 {

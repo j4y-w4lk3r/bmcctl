@@ -24,14 +24,14 @@ func TestMemory_Lifecycle(t *testing.T) {
 	if ref == "" {
 		t.Fatal("empty ref from CreateBMCItem")
 	}
-	if got, _ := m.GetBMCPassword(ref); got != "p@ss" {
+	if got, _ := m.GetBMCPassword("Private", ref); got != "p@ss" {
 		t.Errorf("initial password = %q, want p@ss", got)
 	}
 
 	if err := m.UpdateBMCPassword(ref, "newer-pw"); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := m.GetBMCPassword(ref); got != "newer-pw" {
+	if got, _ := m.GetBMCPassword("Private", ref); got != "newer-pw" {
 		t.Errorf("after update = %q, want newer-pw", got)
 	}
 
@@ -51,7 +51,7 @@ func TestMemory_Lifecycle(t *testing.T) {
 // TestMemory_NotFound checks the error paths.
 func TestMemory_NotFound(t *testing.T) {
 	m := NewMemory()
-	if _, err := m.GetBMCPassword("bogus"); err == nil {
+	if _, err := m.GetBMCPassword("", "bogus"); err == nil {
 		t.Error("GetBMCPassword(bogus) should error")
 	}
 	if err := m.UpdateBMCPassword("bogus", "x"); err == nil {

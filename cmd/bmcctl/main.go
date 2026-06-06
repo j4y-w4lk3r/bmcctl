@@ -868,7 +868,7 @@ func resolveAuthed(nameOrHost string) (*bmc.HostEntry, string, error) {
 	if err := store.Available(); err != nil {
 		return nil, "", err
 	}
-	pw, err := store.GetBMCPassword(entry.OpItemUUID)
+	pw, err := store.GetBMCPassword(entry.OpVault, entry.OpItemUUID)
 	if err != nil {
 		return nil, "", fmt.Errorf("read 1Password item %s: %w", entry.OpItemUUID, err)
 	}

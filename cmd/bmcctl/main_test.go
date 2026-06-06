@@ -385,7 +385,7 @@ func TestCmdAdopt_Roundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := mem.GetBMCPassword(uuid); got != realPW {
+	if got, _ := mem.GetBMCPassword("", uuid); got != realPW {
 		t.Errorf("stored password mismatch")
 	}
 	if srv.Password() != realPW {

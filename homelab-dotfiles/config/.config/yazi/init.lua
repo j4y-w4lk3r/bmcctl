@@ -12,6 +12,20 @@ require("projects"):setup({
     },
 })
 
+-- bbm.yazi — encrypt/push, pull/decrypt, B2 browser
+require("bbm"):setup({
+    prefix = "bu/",
+    browse_prefix = "bu/",
+    bbm_bin = "/opt/homebrew/bin/bbm",
+    rclone_bin = "/usr/local/bin/rclone",
+    mount = {
+        remote = "lsybb0:j4y-bu",
+        path = "~/mnt/j4y-bu",
+        start_in = "bu",
+        cache_mode = "full",
+    },
+})
+
 -- DuckDB plugin configuration (disabled for yazi 0.4.2 compatibility)
 -- require("duckdb"):setup({
 --   mode = "summarized",            -- Default: "summarized" or "standard"

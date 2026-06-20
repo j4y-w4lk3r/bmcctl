@@ -187,6 +187,12 @@ prepend_keymap = [
 	# mount.yazi
 	{ on = "M", run = "plugin mount", desc = "Mount manager" },
 
+	# bbm.yazi — Backblaze B2 via bbm + ykw
+	{ on = [ "b", "m" ], run = "plugin bbm mount", desc = "Mount B2 bucket and cd into it" },
+	{ on = [ "b", "b" ], run = "plugin bbm browse", desc = "Browse B2 bucket (modal)" },
+	{ on = [ "b", "p" ], run = "plugin bbm push", desc = "Encrypt + push to B2" },
+	{ on = [ "b", "P" ], run = "plugin bbm pull", desc = "Pull + decrypt from B2" },
+
 	# duckdb.yazi plugin keybindings
 	# Note: H and L normally map to back/forward navigation
 	# Using these will override the default navigation

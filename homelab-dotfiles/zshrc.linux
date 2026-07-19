@@ -5,6 +5,9 @@ export FUNCNEST=1000
 unset MAILCHECK
 eval "$(zoxide init zsh)"
 
+# 1Password CLI — desktop integration + cached session
+[[ -f "$HOME/.config/zsh/op.zsh" ]] && source "$HOME/.config/zsh/op.zsh"
+
 #--------------------------------------------------------------------------------------------------------------------
 # Aliases
 alias m="mullvad"
@@ -59,7 +62,12 @@ fi
 #--------------------------------------------------------------------------------------------------------------------
 # Completion
 zstyle ':completion:*' menu select
-autoload -Uz compinit && compinit
+autoload -Uz compinit
+if [[ -n ${ZDOTDIR:-$HOME}/.zcompdump(#qN.mh+24) ]]; then
+  compinit
+else
+  compinit -C
+fi
 autoload -Uz zmv
 
 # History
@@ -70,15 +78,26 @@ setopt HIST_IGNORE_DUPS HIST_IGNORE_ALL_DUPS HIST_FIND_NO_DUPS
 setopt HIST_SAVE_NO_DUPS SHARE_HISTORY INC_APPEND_HISTORY
 setopt AUTO_CD CORRECT EXTENDED_GLOB NO_BEEP
 
-# Zsh plugins (Arch paths)
+# Zsh plugins (vi-mode before autosuggestions; defer autosuggest widget bind)
 for _plug in \
-  /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh \
   /usr/share/zsh-vi-mode/zsh-vi-mode.plugin.zsh \
-  /usr/share/forgit/forgit.plugin.zsh \
-  /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; do
+  /usr/share/forgit/forgit.plugin.zsh; do
   [[ -r "$_plug" ]] && source "$_plug"
 done
 unset _plug
+
+_zsh_autosuggest_plugin=/usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+if [[ -r "$_zsh_autosuggest_plugin" ]]; then
+  zmodload zsh/sched
+  ZSH_AUTOSUGGEST_MANUAL_REBIND=1
+  source "$_zsh_autosuggest_plugin"
+  add-zsh-hook -d precmd _zsh_autosuggest_start
+  sched +0 _zsh_autosuggest_bind_widgets
+fi
+unset _zsh_autosuggest_plugin
+
+[[ -r /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]] && \
+  source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 
 # edit-command-line in nvim (Ctrl+Z)
 autoload -Uz edit-command-line
@@ -156,28 +175,6 @@ zle -N toggle_starship_prompt
 bindkey -M emacs '^G' toggle_starship_prompt
 bindkey -M viins '^G' toggle_starship_prompt
 
-# Tailscale SSH picker
-hs() {
-  command -v fzf >/dev/null || { echo >&2 "hs: install fzf"; return 1; }
-  command -v tailscale >/dev/null || { echo >&2 "hs: tailscale CLI not found"; return 1; }
-  local ssh_user="${TS_SSH_USER:-$USER}"
-  [[ -n $1 && $1 != -* ]] && { ssh_user=$1; shift; }
-  local line ip
-  line=$(
-    if command -v jq >/dev/null 2>&1; then
-      command tailscale status --json 2>/dev/null | jq -r '
-        [(if .Self then .Self else empty end), ((.Peer // {}) | to_entries[] | .value)][]
-        | select((.TailscaleIPs // []) | length > 0)
-        | [.TailscaleIPs[0], (.HostName // "?"), (.OS // "?")] | @tsv'
-    else
-      command tailscale status 2>/dev/null | awk '$1 ~ /^100\./ {print $1"\t"$2"\t"$4}'
-    fi | fzf --height=45% --reverse --delimiter=$'\t' --with-nth=1,2,3
-  ) || return 0
-  [[ -n "$line" ]] || return 0
-  ip="${line%%$'\t'*}"
-  command ssh "$@" "${ssh_user}@${ip}"
-}
-
 srall() {
   local entry pane cmd count=0
   for entry in $(tmux list-panes -a -F '#{pane_id}:#{pane_current_command}'); do
@@ -209,12 +206,20 @@ extract() {
 }
 
 export RIPGREP_CONFIG_PATH="${RIPGREP_CONFIG_PATH:-$HOME/.config/ripgrep/config}"
-export PATH="$HOME/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/bin:$PATH"
 
 #--------------------------------------------------------------------------------------------------------------------
-# Modular zsh (synced from Mac ~/.config/zsh/)
+# Modular zsh (homelab-dotfiles/config/zsh/)
+[[ -f "$HOME/.config/zsh/bmcctl-greeting.zsh" ]] && source "$HOME/.config/zsh/bmcctl-greeting.zsh"
 [[ -f "$HOME/.config/zsh/git-account.zsh" ]] && source "$HOME/.config/zsh/git-account.zsh"
 [[ -f "$HOME/.config/zsh/jay.zsh" ]]         && source "$HOME/.config/zsh/jay.zsh"
 [[ -f "$HOME/.config/zsh/github.zsh" ]]       && source "$HOME/.config/zsh/github.zsh"
+[[ -f "$HOME/.config/zsh/hs.zsh" ]]           && source "$HOME/.config/zsh/hs.zsh"
+[[ -f "$HOME/.config/zsh/hlreg.zsh" ]]         && source "$HOME/.config/zsh/hlreg.zsh"
+[[ -f "$HOME/.config/zsh/gscan.zsh" ]]        && source "$HOME/.config/zsh/gscan.zsh"
 [[ -f "$HOME/.config/zsh/imgconv.zsh" ]]      && source "$HOME/.config/zsh/imgconv.zsh"
 [[ -f "$HOME/.config/zsh/backblaze.zsh" ]]    && source "$HOME/.config/zsh/backblaze.zsh"
+[[ -f "$HOME/.config/zsh/x.zsh" ]]            && source "$HOME/.config/zsh/x.zsh"
+[[ -f "$HOME/.config/zsh/px-list.zsh" ]]      && source "$HOME/.config/zsh/px-list.zsh"
+[[ -f "$HOME/.config/zsh/gbr.zsh" ]]          && source "$HOME/.config/zsh/gbr.zsh"
+[[ -f "$HOME/.config/zsh/lazygit.zsh" ]]      && source "$HOME/.config/zsh/lazygit.zsh"

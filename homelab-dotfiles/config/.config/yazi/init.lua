@@ -12,25 +12,24 @@ require("projects"):setup({
     },
 })
 
--- bbm.yazi — encrypt/push, pull/decrypt, B2 browser
-require("bbm"):setup({
-    prefix = "bu/",
-    browse_prefix = "bu/",
-    bbm_bin = "/opt/homebrew/bin/bbm",
-    rclone_bin = "/usr/local/bin/rclone",
-    mount = {
-        remote = "lsybb0:j4y-bu",
-        path = "~/mnt/j4y-bu",
-        start_in = "bu",
-        cache_mode = "full",
-    },
-})
+-- bbm.yazi — optional (plugin + bbm binary must exist on this host)
+local bbm_ok, bbm = pcall(require, "bbm")
+if bbm_ok then
+    local bbm_bin = os.getenv("BBM_BIN") or "/usr/bin/bbm"
+    local rclone_bin = os.getenv("RCLONE_BIN") or "/usr/bin/rclone"
+    bbm:setup({
+        prefix = "bu/",
+        browse_prefix = "bu/",
+        bbm_bin = bbm_bin,
+        rclone_bin = rclone_bin,
+        mount = {
+            remote = "lsybb0:j4y-bu",
+            path = "~/mnt/j4y-bu",
+            start_in = "bu",
+            cache_mode = "full",
+        },
+    })
+end
 
 -- DuckDB plugin configuration (disabled for yazi 0.4.2 compatibility)
--- require("duckdb"):setup({
---   mode = "summarized",            -- Default: "summarized" or "standard"
---   cache_size = 500,               -- Default: 500 (number of rows cached in standard mode)
---   row_id = false,                 -- Default: false (true/false/"dynamic")
---   minmax_column_width = 21,       -- Default: 21 (characters displayed in min/max columns)
---   column_fit_factor = 10.0        -- Default: 10.0 (average space each column takes)
--- })
+-- require("duckdb"):setup({ ... })

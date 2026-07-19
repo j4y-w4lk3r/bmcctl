@@ -15,7 +15,7 @@ if (( $+functions[fzf-file-widget] )) || (( $+functions[fzf-history-widget] )) |
     fi
     sel="${sel%%[[:space:]]#}"
     abs="${${(Q)sel}:a}"
-    print -rn -- "$abs" | pbcopy
+    print -rn -- "$abs" | clipcopy
     zle reset-prompt
     return 0
   }
@@ -28,8 +28,5 @@ if (( $+functions[fzf-file-widget] )) || (( $+functions[fzf-history-widget] )) |
   bindkey -M viins '^Y' fzf-copy-abs-path-widget
   bindkey -M vicmd '^Y' fzf-copy-abs-path-widget
 
-  # Karabiner maps j+d → Ctrl-G (extra binding for fzf-cd-widget)
-  bindkey -M emacs '^G' fzf-cd-widget
-  bindkey -M viins '^G' fzf-cd-widget
-  bindkey -M vicmd '^G' fzf-cd-widget
+  # Ctrl+G reserved for Starship toggle on Linux (see ~/.zshrc)
 fi

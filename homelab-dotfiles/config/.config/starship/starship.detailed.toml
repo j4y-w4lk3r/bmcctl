@@ -1,19 +1,17 @@
-# Detailed Starship prompt (generated from current starship.toml)
+# Detailed Starship prompt
 "$schema" = 'https://starship.rs/config-schema.json'
 
 command_timeout = 2000
 
 format = """
 $directory\
+${custom.sep}\
 $hostname\
-$git_branch\
+${custom.git_owner_lso0}${custom.git_owner_j4y}${custom.git_owner_other}\
+${custom.git_branch}\
+${custom.git_clean}\
+${custom.git_dirty_icon}\
 $git_status\
-$custom\
-$python\
-$golang\
-$rust\
-$java\
-$ruby\
 $cmd_duration\
 $line_break\
 $character
@@ -34,11 +32,7 @@ disabled = true
 disabled = true
 
 [git_branch]
-symbol = " "
-truncation_length = 20
-format = "[$symbol$branch(:$remote_name/$remote_branch)]($style) "
-always_show_remote = true
-ignore_branches = ["main"]
+disabled = true
 
 [git_commit]
 commit_hash_length = 8
@@ -52,21 +46,74 @@ conflicted = "✖"
 ahead = "↑${count}"
 behind = "↓${count}"
 diverged = "↕↑${ahead_count}↓${behind_count}"
-up_to_date = "✓"
+up_to_date = ""
 untracked = "?"
 stashed = "≡"
 modified = "!"
 staged = "+"
 renamed = "»"
 deleted = "✘"
-style = "bright-white"
+style = "bold yellow"
 format = "([($all_status$ahead_behind)]($style) )"
 
-[custom.git_upstream]
+[custom.sep]
+command = "printf '|'"
+format = " [$output](238) "
+style = "238"
+
+[custom.git_owner_lso0]
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1 && url=$(git remote get-url origin 2>/dev/null) && owner="" && case "$url" in git@github.com:*/*|*github.com/*/*) url="${url%.git}"; case "$url" in git@github.com:*) rest="${url#git@github.com:}" ;; *) rest="${url#*github.com/}"; rest="${rest#*:}" ;; esac; owner="${rest%%/*}" ;; esac && [ "$owner" = "lso0" ]'
+command = 'printf lso0'
+symbol = " "
+format = " [|(238)](238) [$symbol$output]($style) "
+style = "bold yellow"
+
+[custom.git_owner_j4y]
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1 && url=$(git remote get-url origin 2>/dev/null) && owner="" && case "$url" in git@github.com:*/*|*github.com/*/*) url="${url%.git}"; case "$url" in git@github.com:*) rest="${url#git@github.com:}" ;; *) rest="${url#*github.com/}"; rest="${rest#*:}" ;; esac; owner="${rest%%/*}" ;; esac && [ "$owner" = "j4y-w4lk3r" ]'
+command = 'printf j4y-w4lk3r'
+symbol = " "
+format = " [|(238)](238) [$symbol$output]($style) "
+style = "bold 205"
+
+[custom.git_owner_other]
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1 && url=$(git remote get-url origin 2>/dev/null) && owner="" && case "$url" in git@github.com:*/*|*github.com/*/*) url="${url%.git}"; case "$url" in git@github.com:*) rest="${url#git@github.com:}" ;; *) rest="${url#*github.com/}"; rest="${rest#*:}" ;; esac; owner="${rest%%/*}" ;; esac && [ -n "$owner" ] && [ "$owner" != "lso0" ] && [ "$owner" != "j4y-w4lk3r" ]'
+command = '''
+url=$(git remote get-url origin 2>/dev/null)
+owner=""
+case "$url" in
+  git@github.com:*/*|*github.com/*/*)
+    url="${url%.git}"
+    case "$url" in
+      git@github.com:*) rest="${url#git@github.com:}" ;;
+      *) rest="${url#*github.com/}"; rest="${rest#*:}" ;;
+    esac
+    owner="${rest%%/*}"
+    ;;
+esac
+[ -n "$owner" ] && printf '%s' "$owner"
+'''
+symbol = " "
+format = " [|(238)](238) [$symbol$output]($style) "
+style = "bold purple"
+
+[custom.git_branch]
 when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1'
-command = 'git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null || echo no-upstream'
-format = "([$output]($style) )"
-style = "dimmed"
+command = 'git branch --show-current 2>/dev/null'
+symbol = " "
+format = " [|(238)](238) [$symbol$output]($style) "
+style = "bold 213"
+
+[custom.git_clean]
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ -z "$(git status --porcelain 2>/dev/null)" ] && { counts="$(git rev-list --left-right --count @{upstream}...HEAD 2>/dev/null)" || exit 0; [ "$(echo "$counts" | awk "{print \$1+\$2}")" = 0 ]; }'
+command = "printf '\\xef\\x81\\x98 '"
+format = " [|(238)](238) [$output]($style) "
+style = "bold green"
+
+[custom.git_dirty_icon]
+when = 'git rev-parse --is-inside-work-tree >/dev/null 2>&1 && { [ -n "$(git status --porcelain 2>/dev/null)" ] && exit 0; counts="$(git rev-list --left-right --count @{upstream}...HEAD 2>/dev/null)" || exit 1; [ "$(echo "$counts" | awk "{print \$1+\$2}")" != 0 ]; }'
+command = "printf '\\xef\\x81\\x84 '"
+format = " [|(238)](238) [$output]($style) "
+style = "bold red"
 
 [directory]
 truncation_length = 5
@@ -80,8 +127,10 @@ format = "[@$hostname]($style) "
 style = "dim white"
 
 [python]
+disabled = true
 symbol = " "
-format = '[${symbol}${pyenv_prefix}(${version} )(\($virtualenv\) )]($style)'
+style = "dimmed white"
+format = '[${symbol}(${version} )(\($virtualenv\) )]($style)'
 
 [nodejs]
 disabled = true
@@ -89,24 +138,32 @@ symbol = "⬢ "
 format = "[$symbol($version )]($style)"
 
 [ruby]
+disabled = true
 symbol = " "
+style = "dimmed white"
 format = "[$symbol($version )]($style)"
 
 [rust]
+disabled = true
 symbol = " "
+style = "dimmed white"
 format = "[$symbol($version )]($style)"
 
 [java]
+disabled = true
 symbol = " "
+style = "dimmed white"
 format = "[$symbol($version )]($style)"
 
 [golang]
+disabled = true
 symbol = " "
+style = "dimmed white"
 format = "[$symbol($version )]($style)"
 
 [cmd_duration]
 min_time = 2000
-format = "󰔟 [$duration](bold yellow)"
+format = "󰔟 [$duration](dimmed yellow)"
 
 [battery]
 disabled = true

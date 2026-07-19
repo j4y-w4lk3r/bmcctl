@@ -1,0 +1,4 @@
+# pacman packages for j4y ceremony / daily machine (Arch)
+git curl openssh sudo base-devel python
+pcsclite ccid pcsc-tools libfido2
+age gnupg pinentry openpgp-card-tools

@@ -1,0 +1,16 @@
+j4y offline bootstrap
+
+  cd /run/media/$USER/J4Y-ROOT    # or your mount path
+  ./run
+
+One command: health check, key detection (Bio + Mini), ceremony JSON, session log in .j4y/
+
+  ./run check
+  ./run ceremony
+  ./run ceremony done age_bio
+  ./run init
+
+Docs: docs/j4y-usb-bootstrap.md
+Version: .j4y/version.json  (created date dd/mm/yyyy)
+
+No secrets on this stick — vault/ holds .age ciphertext only.

@@ -64,6 +64,7 @@ help:
 	@echo "  make hosts                    list configured hosts"
 	@echo "  make validate                 shellcheck + bash -n on all scripts"
 	@echo "  make iso     HOST=<label>     build out/bmcctl-installer-<label>-*.iso"
+	@echo "                               (headscale: key_fetch_host in TOML; key served at install time)"
 	@echo "  make test    HOST=<label>     boot the latest <label> ISO in QEMU on"
 	@echo "                                a fresh blank disk; serial console attached"
 	@echo "                                so you watch install.sh run live"

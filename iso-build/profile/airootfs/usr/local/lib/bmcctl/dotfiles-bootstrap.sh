@@ -49,6 +49,11 @@ if command -v zsh >/dev/null 2>&1; then
   chsh -s "$(command -v zsh)" "$USER" || true
 fi
 
+# Drop bash skel leftovers — homelab is zsh-only.
+rm -f "/home/$USER/.bash_logout" \
+      "/home/$USER/.bash_profile" \
+      "/home/$USER/.bashrc"
+
 mkdir -p /var/lib/bmcctl
 touch "$MARKER"
 systemctl disable bmcctl-dotfiles.service

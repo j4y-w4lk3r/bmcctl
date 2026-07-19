@@ -45,6 +45,23 @@ ssh_pubkey_file = "~/.ssh/id_ed25519_yubikey.pub"
 # Or:              openssl passwd -6 'mysecret'
 password_hash = ""
 
+[dotfiles]
+# Clone homelab-dotfiles from GitHub on first real boot.
+bootstrap = false
+repo = "https://github.com/j4y-w4lk3r/bmcctl.git"
+
+# Optional: auto-join Headscale on first boot. The preauth key is never
+# baked into the ISO — install-host.sh mints a single-use key and serves
+# it once over HTTP while install.sh runs on the target.
+[headscale]
+enabled = false
+login_server = "https://hs.d0j0.dev"
+hostname = "nas"
+accept_routes = true
+accept_dns = true
+key_fetch_host = "192.168.1.44"
+key_fetch_port = 9765
+
 [packages]
 # Packages installed into the new system in addition to the
 # bmcctl installer's defaults (base, linux, networkmanager,

@@ -78,8 +78,17 @@ PASSWORD_HASH=$(read_toml '.user.password_hash')
 EXTRA_PACKAGES=$(read_toml '.packages.extra')
 DOTFILES_BOOTSTRAP=$(read_toml '.dotfiles.bootstrap')
 DOTFILES_REPO=$(read_toml '.dotfiles.repo')
+HEADSCALE_ENABLED=$(read_toml '.headscale.enabled')
+HEADSCALE_LOGIN_SERVER=$(read_toml '.headscale.login_server')
+HEADSCALE_HOSTNAME=$(read_toml '.headscale.hostname')
+HEADSCALE_ACCEPT_ROUTES=$(read_toml '.headscale.accept_routes')
+HEADSCALE_ACCEPT_DNS=$(read_toml '.headscale.accept_dns')
+_TOML_KEY_FETCH_HOST=$(read_toml '.headscale.key_fetch_host')
+HEADSCALE_KEY_FETCH_PORT=$(read_toml '.headscale.key_fetch_port')
 DOTFILES_BOOTSTRAP=${DOTFILES_BOOTSTRAP:-false}
 DOTFILES_REPO=${DOTFILES_REPO:-https://github.com/j4y-w4lk3r/bmcctl.git}
+# Env wins over TOML (install-host.sh exports the detected LAN IP at make iso).
+HEADSCALE_KEY_FETCH_HOST=${HEADSCALE_KEY_FETCH_HOST:-$_TOML_KEY_FETCH_HOST}
 # TOML booleans render parser-dependently: tomlq emits "true"/"false",
 # but the python3/tomllib fallback prints Python's "True"/"False". The
 # on-ISO install.sh compares against lowercase "true", so normalize to a
@@ -88,6 +97,21 @@ case "$(printf '%s' "$DOTFILES_BOOTSTRAP" | tr '[:upper:]' '[:lower:]')" in
     true|yes|1) DOTFILES_BOOTSTRAP=true ;;
     *)          DOTFILES_BOOTSTRAP=false ;;
 esac
+case "$(printf '%s' "$HEADSCALE_ENABLED" | tr '[:upper:]' '[:lower:]')" in
+    true|yes|1) HEADSCALE_ENABLED=true ;;
+    *)          HEADSCALE_ENABLED=false ;;
+esac
+HEADSCALE_LOGIN_SERVER=${HEADSCALE_LOGIN_SERVER:-https://hs.d0j0.dev}
+HEADSCALE_HOSTNAME=${HEADSCALE_HOSTNAME:-$HOSTNAME}
+HEADSCALE_ACCEPT_ROUTES=${HEADSCALE_ACCEPT_ROUTES:-true}
+HEADSCALE_ACCEPT_DNS=${HEADSCALE_ACCEPT_DNS:-true}
+HEADSCALE_KEY_FETCH_PORT=${HEADSCALE_KEY_FETCH_PORT:-9765}
+if [[ $HEADSCALE_ENABLED == true && -z $HEADSCALE_KEY_FETCH_HOST ]]; then
+    echo "render-config: [headscale].enabled=true but key_fetch_host is unset" >&2
+    echo "  set [headscale].key_fetch_host in TOML, or:" >&2
+    echo "  HEADSCALE_KEY_FETCH_HOST=192.168.1.44 make iso HOST=$LABEL" >&2
+    exit 8
+fi
 
 # Sensible defaults for omitted optional fields.
 LOCALE=${LOCALE:-en_US.UTF-8}
@@ -168,6 +192,13 @@ USER_PASSWORD_HASH='$PASSWORD_HASH'
 POST_INSTALL_PACKAGES='$EXTRA_PACKAGES'
 DOTFILES_BOOTSTRAP='$DOTFILES_BOOTSTRAP'
 DOTFILES_REPO='$DOTFILES_REPO'
+HEADSCALE_ENABLED='$HEADSCALE_ENABLED'
+HEADSCALE_LOGIN_SERVER='$HEADSCALE_LOGIN_SERVER'
+HEADSCALE_HOSTNAME='$HEADSCALE_HOSTNAME'
+HEADSCALE_ACCEPT_ROUTES='$HEADSCALE_ACCEPT_ROUTES'
+HEADSCALE_ACCEPT_DNS='$HEADSCALE_ACCEPT_DNS'
+HEADSCALE_KEY_FETCH_HOST='$HEADSCALE_KEY_FETCH_HOST'
+HEADSCALE_KEY_FETCH_PORT='$HEADSCALE_KEY_FETCH_PORT'
 ENV
 chmod 0644 "$OUT"
 

@@ -40,6 +40,20 @@ keymap   = "us"
 bootstrap = true
 repo = "https://github.com/j4y-w4lk3r/bmcctl.git"
 
+# Join Headscale on first boot. The preauth key is NOT in the ISO —
+# install-host.sh mints a single-use key and serves it once over HTTP
+# while install.sh runs on the target.
+[headscale]
+enabled = true
+login_server = "https://hs.d0j0.dev"
+hostname = "nas"
+accept_routes = true
+accept_dns = true
+# LAN IP of the machine running install-host.sh (only non-secret in ISO).
+# install-host.sh overrides with auto-detected IP when building the ISO.
+key_fetch_host = "192.168.1.44"
+key_fetch_port = 9765
+
 [user]
 name = "j4y"
 

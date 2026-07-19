@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# run — entry point at J4Y-ROOT (plug USB → cd here → ./run)
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+exec "$ROOT/bootstrap/run.sh" "$@"

@@ -1,0 +1,14 @@
+[Unit]
+Description=bmcctl Headscale join (first boot)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=!/var/lib/bmcctl/headscale-done
+ConditionPathExists=/etc/bmcctl/headscale.env
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/lib/bmcctl/headscale-join.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

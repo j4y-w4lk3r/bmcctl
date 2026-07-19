@@ -29,8 +29,8 @@ DRY_RUN="${DRY_RUN:-0}"
 SKIP_DEPS="${SKIP_DEPS:-0}"
 
 declare -A HOSTS=(
-  [router]=192.168.1.63
-  [nas]=192.168.1.64
+  [router]=${ROUTER_IP:-192.168.1.63}
+  [nas]=${NAS_IP:-192.168.1.65}
 )
 
 rsync_to() {
@@ -83,7 +83,9 @@ deploy_host() {
 
   echo "::: zsh modules + jay profiles"
   rsync_to "$target" "$DOTFILES_DIR/zsh/platform.zsh"           ~/.config/zsh/
-  rsync_to "$target" "$CONFIG_SRC/zsh/"                        ~/.config/zsh/
+  ZSH_SRC="$DOTFILES_DIR/config/zsh"
+  [[ -d "$ZSH_SRC" ]] || ZSH_SRC="$CONFIG_SRC/zsh"
+  rsync_to "$target" "$ZSH_SRC/"                               ~/.config/zsh/
   rsync_to "$target" "$CONFIG_SRC/jay/profiles/"                ~/.config/jay/profiles/
   rsync_to "$target" "$DOTFILES_DIR/jay/profiles/"              ~/.config/jay/profiles/
 

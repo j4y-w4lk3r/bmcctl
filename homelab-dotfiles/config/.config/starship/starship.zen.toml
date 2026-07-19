@@ -29,3 +29,19 @@ disabled = true
 disabled = true
 [custom.git_upstream]
 disabled = true
+[custom.git_ctx]
+disabled = true
+[custom.git_owner]
+disabled = true
+[custom.git_owner_lso0]
+disabled = true
+[custom.git_owner_j4y]
+disabled = true
+[custom.git_owner_other]
+disabled = true
+[custom.git_branch]
+disabled = true
+[custom.git_clean]
+disabled = true
+[custom.git_dirty_icon]
+disabled = true

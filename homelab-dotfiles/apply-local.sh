@@ -59,6 +59,14 @@ fi
 cp "$DOTFILES_DIR/zshrc.linux" "$HOME/.zshrc"
 sed -i 's/pbcopy/clipcopy/g; s/pbpaste/clippaste/g' "$HOME/.config/zsh/github.zsh" 2>/dev/null || true
 
+# zsh-only — remove bash skel dotfiles if present.
+rm -f "$HOME/.bash_logout" "$HOME/.bash_profile" "$HOME/.bashrc"
+
+if command -v zsh >/dev/null 2>&1 && [[ "$(getent passwd "$USER" | cut -d: -f7)" != "$(command -v zsh)" ]]; then
+  echo "::: chsh → zsh"
+  sudo chsh -s "$(command -v zsh)" "$USER" 2>/dev/null || true
+fi
+
 echo "::: smoke test (informational — never fails the apply)"
 zsh -lic 'echo shell=$SHELL; command -v starship yazi tmux btop zoxide 2>/dev/null; fastfetch -l none 2>/dev/null | head -5' || true
 echo "✓ apply-local done — open a new SSH session or: exec zsh"

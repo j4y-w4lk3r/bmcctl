@@ -21,8 +21,8 @@ REPO_URL="${BMCCTL_REPO:-https://github.com/j4y-w4lk3r/bmcctl.git}"
 SKIP_DEPS="${SKIP_DEPS:-0}"
 
 declare -A HOSTS=(
-  [router]=192.168.1.63
-  [nas]=192.168.1.64
+  [router]=${ROUTER_IP:-192.168.1.63}
+  [nas]=${NAS_IP:-192.168.1.65}
 )
 
 bootstrap_one() {

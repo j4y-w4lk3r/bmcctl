@@ -23,6 +23,7 @@ hosts.json
 # iso-build artifacts (large + ephemeral)
 /iso-build/out/
 /iso-build/work-*/
+/iso-build/logs/
 /iso-build/test-disk-*.qcow2
 /iso-build/test-ovmf-vars-*.fd
 # per-host configs are real config, NOT secrets, so they're tracked

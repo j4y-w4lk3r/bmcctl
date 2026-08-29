@@ -1,3 +1,6 @@
+# DEPRECATED — use iso-build/hosts/nas2.toml (hostname nas2, Warsaw PLH1 server).
+# Kept temporarily so old `make iso HOST=ru0` invocations fail loudly until removed.
+#
 # Per-host configuration for the bmcctl Arch installer ISO.
 #
 # Target hardware: Custom Router

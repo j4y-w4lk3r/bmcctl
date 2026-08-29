@@ -1,0 +1,26 @@
+{
+  "hosts": [
+    {
+      "label": "nas2",
+      "host": "192.168.1.54",
+      "host_model": "W680D4U-2L2T/G5",
+      "op_item_uuid": "<1password-uuid-plh1-bmc>",
+      "op_vault": "<vault-id-or-name>",
+      "username": "admin",
+      "account_id": "4",
+      "initialized_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "label": "plh3-bmc",
+      "host": "192.168.1.13",
+      "host_model": "W680D4U-2L2T/G5",
+      "op_item_uuid": "<1password-uuid-plh3-bmc>",
+      "op_vault": "<vault-id-or-name>",
+      "username": "admin",
+      "account_id": "4",
+      "initialized_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,99 @@
+# Per-host configuration for the bmcctl Arch installer ISO.
+#
+# Target hardware: Warsaw PLH1 server (nas2)
+#   - ASRock W680D4U-2L2T/G5  (Aspeed AST2600 BMC, AMI MegaRAC, IPMI/Redfish)
+#   - Intel Core i5-13500     (14 cores, Raptor Lake)
+#   - 32 GB DDR5 (2x16GB Crucial 4800)
+#   - Samsung 990 Pro 2TB NVMe  -> /dev/nvme0n1
+#   - 2x 1G + 2x 10G onboard + Mellanox ConnectX-4 Lx 2x25G SFP28
+#
+# BMC: 192.168.1.54  (bmcctl label nas2, 1Password plh1-bmc)
+# Remote control: pikvm1 (100.64.0.8) on Warsaw LAN
+#
+# Smoke-test command (Arch box, ~2 min, no real hardware touched):
+#     make iso HOST=nas2 && make test HOST=nas2
+#
+# Production install (DESTROYS the NVMe — only run when ready):
+#     make iso HOST=nas2
+#     make publish HOST=nas2
+#     ./scripts/bmcctl-via-pikvm.sh install-arch nas2 --iso https://<url>/...
+
+[host]
+hostname = "nas2"
+
+# Samsung 990 Pro 2TB NVMe is the only block device on this board.
+# Mellanox card has no storage; SATA is unpopulated.
+# Verify on the live ISO with:   lsblk
+target_disk = "/dev/nvme0n1"
+
+# REQUIRED acknowledgement that target_disk gets wiped. Anything
+# other than the literal string "yes" aborts before sgdisk runs.
+wipe_disk = "yes"
+
+timezone = "Europe/Warsaw"
+locale   = "en_US.UTF-8"
+keymap   = "us"
+
+[dotfiles]
+# On first boot after install: git clone bmcctl + apply homelab-dotfiles.
+bootstrap = true
+repo = "https://github.com/j4y-w4lk3r/bmcctl.git"
+
+[user]
+name = "j4y"
+
+ssh_pubkey_file = "~/.ssh/id_ed25519.pub"
+password_hash = ""
+
+[packages]
+# install.sh already pulls: base, linux, linux-firmware,
+# networkmanager, openssh, sudo, vim, git, curl, htop, intel-ucode.
+extra = [
+    "ethtool",
+    "tcpdump",
+    "mtr",
+    "iperf3",
+    "bind-tools",
+    "nmap",
+    "tailscale",
+    "rsync",
+    "mosh",
+    "iftop",
+    "nethogs",
+    "lsof",
+    "wireguard-tools",
+    "zsh",
+    "zsh-completions",
+    "tmux",
+    "starship",
+    "fastfetch",
+    "yazi",
+    "eza",
+    "bat",
+    "fd",
+    "ripgrep",
+    "fzf",
+    "zoxide",
+    "tree",
+    "jq",
+    "neovim",
+    "helix",
+    "github-cli",
+    "git-delta",
+    "lazygit",
+    "openssh",
+    "btop",
+    "iotop",
+    "lm_sensors",
+    "smartmontools",
+    "nvme-cli",
+    "pciutils",
+    "usbutils",
+    "man-db",
+    "man-pages",
+    "less",
+    "wget",
+    "unzip",
+    "zip",
+    "p7zip",
+]

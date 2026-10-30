@@ -10,3 +10,9 @@ config/yazi/plugins/**/.git/
 
 # macOS junk
 .DS_Store
+
+# 1Password CLI account data, never commit
+config/.config/op/*
+!config/.config/op/.gitkeep
+config/op/*
+!config/op/.gitkeep
